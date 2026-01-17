@@ -99,54 +99,67 @@ declare const L: any;
 const MapView: React.FC<{ location?: UserLocation; onRefresh: () => void; onClose: () => void }> = ({ location, onRefresh, onClose }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     if (!mapRef.current || !location || typeof L === 'undefined') return;
     
-    if (mapInstance.current) {
-      mapInstance.current.remove();
-    }
-
-    mapInstance.current = L.map(mapRef.current, { 
-      zoomControl: false, 
-      attributionControl: false,
-      fadeAnimation: true
-    }).setView([location.latitude, location.longitude], 15);
-
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { 
-      maxZoom: 20, 
-      detectRetina: true,
-      r: window.devicePixelRatio > 1 ? '@2x' : ''
-    }).addTo(mapInstance.current);
-
-    setTimeout(() => {
+    // Slight delay to allow overlay animation to settle
+    const initTimeout = setTimeout(() => {
       if (mapInstance.current) {
-        mapInstance.current.invalidateSize();
+        mapInstance.current.remove();
       }
-    }, 400);
 
-    const icon = (color: string, iconName: string) => L.divIcon({ 
-        html: `<div class="w-10 h-10 bg-${color}-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white transform transition-transform hover:scale-110"><i class="fa-solid fa-${iconName}"></i></div>`, 
-        iconSize: [40, 40], className: 'custom-marker' 
-    });
+      try {
+        mapInstance.current = L.map(mapRef.current, { 
+          zoomControl: false, 
+          attributionControl: false,
+          fadeAnimation: true
+        }).setView([location.latitude, location.longitude], 15);
 
-    L.marker([location.latitude, location.longitude], { 
-      icon: L.divIcon({ html: '<div class="w-6 h-6 bg-blue-500 rounded-full border-4 border-white shadow-lg animate-pulse"></div>', iconSize: [24, 24] }) 
-    }).addTo(mapInstance.current);
-    
-    const spots = [
-        { lat: location.latitude + 0.003, lng: location.longitude + 0.004, name: 'Vet Emergency Center', type: 'hospital', color: 'orange' },
-        { lat: location.latitude - 0.002, lng: location.longitude - 0.005, name: 'Golden Bark Park', type: 'tree', color: 'green' },
-        { lat: location.latitude + 0.006, lng: location.longitude - 0.002, name: 'The Grooming Den', type: 'scissors', color: 'blue' },
-    ];
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { 
+          maxZoom: 20, 
+          detectRetina: true,
+          r: window.devicePixelRatio > 1 ? '@2x' : ''
+        }).addTo(mapInstance.current);
 
-    spots.forEach(s => {
-      L.marker([s.lat, s.lng], { icon: icon(s.color, s.type) })
-       .addTo(mapInstance.current)
-       .bindPopup(`<div class="p-1"><b class="block text-sm">${s.name}</b><span class="text-[10px] text-slate-400 uppercase font-black tracking-widest">${s.type}</span></div>`);
-    });
+        // Stage 2: Force dimensions update after tiles start loading
+        requestAnimationFrame(() => {
+          if (mapInstance.current) {
+            mapInstance.current.invalidateSize();
+            setMapReady(true);
+          }
+        });
 
-    return () => { if (mapInstance.current) mapInstance.current.remove(); };
+        // Current Location Marker
+        L.marker([location.latitude, location.longitude], { 
+          icon: L.divIcon({ html: '<div class="w-6 h-6 bg-blue-500 rounded-full border-4 border-white shadow-lg animate-pulse"></div>', iconSize: [24, 24] }) 
+        }).addTo(mapInstance.current);
+        
+        // Local POIs
+        const spots = [
+            { lat: location.latitude + 0.003, lng: location.longitude + 0.004, name: 'Vet Emergency', type: 'hospital', color: 'orange' },
+            { lat: location.latitude - 0.002, lng: location.longitude - 0.005, name: 'Paws Park', type: 'tree', color: 'green' },
+            { lat: location.latitude + 0.006, lng: location.longitude - 0.002, name: 'Pet Grooming', type: 'scissors', color: 'blue' },
+        ];
+
+        spots.forEach(s => {
+          L.marker([s.lat, s.lng], { 
+            icon: L.divIcon({ 
+              html: `<div class="w-10 h-10 bg-${s.color}-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white"><i class="fa-solid fa-${s.type}"></i></div>`, 
+              iconSize: [40, 40] 
+            }) 
+          }).addTo(mapInstance.current).bindPopup(`<b>${s.name}</b>`);
+        });
+      } catch (err) {
+        console.error("Map Init Error:", err);
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(initTimeout);
+      if (mapInstance.current) mapInstance.current.remove();
+    };
   }, [location]);
 
   return (
@@ -155,26 +168,37 @@ const MapView: React.FC<{ location?: UserLocation; onRefresh: () => void; onClos
         <button onClick={onClose} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl"><i className="fa-solid fa-chevron-left"></i></button>
         <h1 className="text-xl font-black italic">Local Services</h1>
       </header>
-      <div className="flex-1 relative bg-slate-50 overflow-hidden">
+      
+      <div className="flex-1 relative bg-slate-100 overflow-hidden">
         {!location ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center space-y-6 z-[200]">
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center space-y-6 z-[200] bg-white">
             <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 animate-bounce">
               <i className="fa-solid fa-location-dot text-4xl"></i>
             </div>
-            <h3 className="text-xl font-black text-slate-800">Map restricted</h3>
-            <p className="text-sm text-slate-400">Please enable location access to see local vets and dog parks.</p>
-            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black">Grant Permission</button>
+            <h3 className="text-xl font-black text-slate-800">Location required</h3>
+            <p className="text-sm text-slate-400">Paws4life needs location access to find the nearest emergency vets and parks.</p>
+            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-lg">Enable Location</button>
           </div>
         ) : (
-          <div className="absolute inset-0 w-full h-full">
-            <div ref={mapRef} id="map" className="w-full h-full"></div>
-            <button onClick={onRefresh} className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100"><i className="fa-solid fa-location-crosshairs text-xl"></i></button>
-          </div>
+          <>
+            {!mapReady && (
+              <div className="absolute inset-0 z-[160] bg-slate-50 flex flex-col items-center justify-center gap-4">
+                <i className="fa-solid fa-paw text-4xl text-orange-200 animate-spin"></i>
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Waking up the map...</span>
+              </div>
+            )}
+            <div className="absolute inset-0 w-full h-full bg-slate-200">
+              <div ref={mapRef} id="map" className="w-full h-full z-10"></div>
+              <button onClick={onRefresh} className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90"><i className="fa-solid fa-location-crosshairs text-xl"></i></button>
+            </div>
+          </>
         )}
       </div>
+
       <footer className="p-4 flex gap-3 overflow-x-auto scrollbar-hide bg-white border-t border-slate-100 shrink-0">
-        <div className="px-5 py-3 bg-orange-50 text-orange-600 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap border border-orange-100">Nearby Vets</div>
-        <div className="px-5 py-3 bg-green-50 text-green-600 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap border border-green-100">Dog Parks</div>
+        <div className="px-5 py-3 bg-orange-50 text-orange-600 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap border border-orange-100">Hospitals</div>
+        <div className="px-5 py-3 bg-green-50 text-green-600 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap border border-green-100">Parks</div>
+        <div className="px-5 py-3 bg-blue-50 text-blue-600 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap border border-blue-100">Stores</div>
       </footer>
     </div>
   );
@@ -210,7 +234,10 @@ const App: React.FC = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         p => setLocation({ latitude: p.coords.latitude, longitude: p.coords.longitude }),
-        err => { if (view === 'map') alert("Please enable location permissions in Settings."); },
+        err => { 
+          console.warn("Location error", err);
+          if (view === 'map') alert("Location access is turned off. Please enable it in settings to use the map."); 
+        },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
@@ -297,7 +324,7 @@ const App: React.FC = () => {
               <i className="fa-solid fa-bell"></i>
               {activeRemindersCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse">{activeRemindersCount}</span>}
             </button>
-            <button onClick={() => setView('map')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-map-location-dot"></i></button>
+            <button onClick={() => setView('map')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:bg-white/40"><i className="fa-solid fa-map-location-dot"></i></button>
             <button onClick={() => setView('settings')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-user-gear"></i></button>
             <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-dog"></i></button>
           </div>
@@ -308,7 +335,7 @@ const App: React.FC = () => {
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
             <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 mb-4"><i className="fa-solid fa-shield-dog text-2xl"></i></div>
-            <p className="text-xs font-black uppercase tracking-widest">How can I help you and your pack?</p>
+            <p className="text-xs font-black uppercase tracking-widest leading-relaxed">Safety first.<br/>How can I help your pack today?</p>
           </div>
         )}
         {messages.map(m => (
@@ -316,7 +343,7 @@ const App: React.FC = () => {
             <div className={`max-w-[88%] p-4 rounded-[2rem] text-sm shadow-sm ${m.role === 'user' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-white border text-slate-800 rounded-tl-none'}`}>
               {m.role === 'model' && m.isVerified && (
                 <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-blue-500 mb-2 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 w-fit">
-                  <i className="fa-solid fa-circle-check"></i> Verified medical dataset reference
+                  <i className="fa-solid fa-circle-check"></i> Internal Medical Dataset
                 </div>
               )}
               <div className="whitespace-pre-wrap leading-relaxed prose prose-sm">{m.text}</div>
@@ -334,7 +361,7 @@ const App: React.FC = () => {
 
       <footer className="px-4 py-4 bg-white border-t sticky bottom-0 z-50 shadow-md" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1.25rem)' }}>
         <form onSubmit={sendMessage} className="flex gap-2">
-          <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Ask a vet question..."} className="flex-1 bg-slate-100 px-5 py-3.5 rounded-2xl text-sm border border-transparent focus:border-orange-500 outline-none transition-all" />
+          <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Ask a health question..."} className="flex-1 bg-slate-100 px-5 py-3.5 rounded-2xl text-sm border border-transparent focus:border-orange-500 outline-none transition-all" />
           <button type="submit" disabled={!input.trim() || loading} className="bg-orange-600 text-white w-12 h-12 rounded-2xl shadow-lg flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-paper-plane"></i></button>
         </form>
       </footer>
@@ -348,9 +375,9 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black italic">My Pack</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto">
-            <button onClick={() => { setFormDog({ vaccinations: [], procedures: [], reminders: [] }); setView('edit-form'); }} className="w-full py-5 border-2 border-dashed border-orange-200 bg-orange-50 text-orange-600 font-black rounded-[2rem]">Add Pack Member</button>
+            <button onClick={() => { setFormDog({ vaccinations: [], procedures: [], reminders: [] }); setView('edit-form'); }} className="w-full py-5 border-2 border-dashed border-orange-200 bg-orange-50 text-orange-600 font-black rounded-[2rem] active:bg-orange-100">Add Dog</button>
             {profiles.map(p => (
-              <div key={p.id} onClick={() => { setViewId(p.id); setView('profile-detail'); }} className="p-4 rounded-[2rem] border-2 flex items-center gap-4 bg-white border-slate-100">
+              <div key={p.id} onClick={() => { setViewId(p.id); setView('profile-detail'); }} className="p-4 rounded-[2rem] border-2 flex items-center gap-4 bg-white border-slate-100 active:bg-slate-50">
                 <div className="w-14 h-14 rounded-2xl overflow-hidden border bg-slate-100 flex items-center justify-center">
                   {p.photo ? <img src={p.photo} className="w-full h-full object-cover" /> : <i className="fa-solid fa-dog text-slate-300"></i>}
                 </div>
@@ -366,12 +393,12 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 flex items-center gap-3">
             <button onClick={() => setView('profiles')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Member Info</h1>
+            <h1 className="text-xl font-black italic">Details</h1>
           </header>
           <form onSubmit={saveDog} className="flex-1 p-6 space-y-6 overflow-y-auto">
-            <input required value={formDog?.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-slate-50 border px-5 py-4 rounded-2xl font-bold" placeholder="Dog Name *" />
-            <input value={formDog?.breed || ''} onChange={e => setFormDog({ ...formDog, breed: e.target.value })} className="w-full bg-slate-50 border px-5 py-4 rounded-2xl font-bold" placeholder="Breed" />
-            <button type="submit" className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl shadow-xl">Save Member</button>
+            <input required value={formDog?.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-slate-50 border px-5 py-4 rounded-2xl font-bold outline-none" placeholder="Name *" />
+            <input value={formDog?.breed || ''} onChange={e => setFormDog({ ...formDog, breed: e.target.value })} className="w-full bg-slate-50 border px-5 py-4 rounded-2xl font-bold outline-none" placeholder="Breed" />
+            <button type="submit" className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl shadow-xl">Confirm</button>
           </form>
         </div>
       )}
@@ -380,7 +407,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[110] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 flex items-center justify-between">
             <button onClick={() => setView('profiles')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl"><i className="fa-solid fa-chevron-left"></i></button>
-            <button onClick={() => { setActiveId(viewDog.id); setView('chat'); }} className="bg-white text-orange-600 px-4 py-2 rounded-xl text-xs font-black uppercase">Set Active</button>
+            <button onClick={() => { setActiveId(viewDog.id); setView('chat'); }} className="bg-white text-orange-600 px-4 py-2 rounded-xl text-xs font-black uppercase">Select</button>
           </header>
           <div className="flex-1 p-6 space-y-8 overflow-y-auto">
             <div className="flex items-center gap-6">
@@ -392,7 +419,7 @@ const App: React.FC = () => {
                 <p className="text-sm text-slate-400 font-bold uppercase">{viewDog.breed || 'Dog'}</p>
               </div>
             </div>
-            <button onClick={() => { if(confirm("Remove from pack?")) { setProfiles(profiles.filter(p => p.id !== viewDog.id)); setView('profiles'); } }} className="text-red-400 font-black uppercase text-xs">Delete Member</button>
+            <button onClick={() => { if(confirm("Remove?")) { setProfiles(profiles.filter(p => p.id !== viewDog.id)); setView('profiles'); } }} className="text-red-400 font-black uppercase text-xs">Delete Profile</button>
           </div>
         </div>
       )}
@@ -401,12 +428,12 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[120] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 flex items-center gap-3">
             <button onClick={() => setView('chat')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Settings</h1>
+            <h1 className="text-xl font-black italic">Owner</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto">
-            <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Your Name" className="w-full bg-slate-50 border px-5 py-4 rounded-2xl font-bold" />
-            <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email Address" className="w-full bg-slate-50 border px-5 py-4 rounded-2xl font-bold" />
-            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12">paws4life v1.6.0 Unified Build</p>
+            <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Your Name" className="w-full bg-slate-50 border px-5 py-4 rounded-2xl font-bold outline-none" />
+            <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email" className="w-full bg-slate-50 border px-5 py-4 rounded-2xl font-bold outline-none" />
+            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.6.2 Stable</p>
           </div>
         </div>
       )}
@@ -415,10 +442,10 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[130] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 flex items-center gap-3">
             <button onClick={() => setView('chat')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Reminders</h1>
+            <h1 className="text-xl font-black italic">Alerts</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto">
-            {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic">No reminders</p> : 
+            {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic py-12">No current reminders</p> : 
               profiles.flatMap(p => p.reminders).map(r => (
                 <div key={r.id} className="p-4 bg-orange-50 border rounded-[2rem] flex items-center gap-4">
                   <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-orange-600 shadow-sm"><i className="fa-solid fa-bell"></i></div>
