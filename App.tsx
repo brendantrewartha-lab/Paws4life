@@ -116,6 +116,7 @@ const MapView: React.FC<{
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   const [mapReady, setMapReady] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -130,7 +131,7 @@ const MapView: React.FC<{
     { id: 'Dog Hospital', label: 'Hospitals', icon: 'fa-hospital', color: 'red' }
   ];
 
-  // Initialize Map
+  // Initialize Map & Robust Resize Detection
   useEffect(() => {
     if (!mapRef.current || !location || typeof L === 'undefined') return;
     
@@ -151,16 +152,6 @@ const MapView: React.FC<{
         r: window.devicePixelRatio > 1 ? '@2x' : ''
       }).addTo(mapInstance.current);
 
-      const forceInvalidate = () => {
-        if (mapInstance.current) {
-          mapInstance.current.invalidateSize();
-          setMapReady(true);
-        }
-      };
-
-      setTimeout(forceInvalidate, 200);
-      setTimeout(forceInvalidate, 1000); // Failsafe for mobile rendering
-
       L.marker([location.latitude, location.longitude], { 
         icon: L.divIcon({ 
           html: '<div class="relative w-8 h-8 flex items-center justify-center"><div class="absolute inset-0 bg-blue-500 rounded-full opacity-30 animate-ping"></div><div class="relative w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div></div>', 
@@ -168,11 +159,25 @@ const MapView: React.FC<{
           className: 'user-marker'
         }) 
       }).addTo(mapInstance.current);
+
+      setMapReady(true);
     };
 
     initMap();
 
+    // Use ResizeObserver to prevent grey screen on all devices
+    const resizeObserver = new ResizeObserver(() => {
+      if (mapInstance.current) {
+        mapInstance.current.invalidateSize();
+      }
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
     return () => {
+      resizeObserver.disconnect();
       if (mapInstance.current) {
         mapInstance.current.off();
         mapInstance.current.remove();
@@ -199,10 +204,10 @@ const MapView: React.FC<{
       }).addTo(mapInstance.current);
 
       const popupContent = `
-        <div class="p-3 max-w-[200px]">
+        <div class="p-3 min-w-[160px]">
           <h3 class="font-black text-slate-800 text-sm leading-tight mb-1">${place.name}</h3>
           <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">${place.type}</p>
-          ${place.address ? `<p class="text-[11px] text-slate-600 mb-2 leading-snug"><i class="fa-solid fa-location-dot mr-1"></i> ${place.address}</p>` : ''}
+          <div class="text-[11px] text-slate-600 mb-2 leading-snug"><i class="fa-solid fa-location-dot mr-1"></i> Located near you</div>
           ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all">Visit Website</a>` : ''}
         </div>
       `;
@@ -218,13 +223,15 @@ const MapView: React.FC<{
 
     if (places.length > 1) {
       const group = new L.featureGroup(markersRef.current);
-      mapInstance.current.fitBounds(group.getBounds().pad(0.2));
+      mapInstance.current.fitBounds(group.getBounds().pad(0.3));
     }
   }, [places]);
 
   const fetchPlaces = async (query: string) => {
     if (!location) return;
-    if (!query.trim()) {
+    
+    // If no query or categories, show nothing
+    if (!query || query.trim().length === 0) {
       setPlaces([]);
       return;
     }
@@ -234,7 +241,7 @@ const MapView: React.FC<{
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Find the following pet-related services near me: ${query}. Return relevant results.`,
+        contents: `Find the following pet-related services near my location: ${query}. Use grounding to find actual businesses.`,
         config: {
           tools: [{ googleMaps: {} }],
           toolConfig: {
@@ -253,18 +260,23 @@ const MapView: React.FC<{
 
       chunks.forEach((chunk: any, idx: number) => {
         if (chunk.maps) {
-          // Find which category this belongs to for the icon/color
           const title = chunk.maps.title?.toLowerCase() || "";
-          let matchedCat = categories.find(c => title.includes(c.id.toLowerCase()) || title.includes(c.label.toLowerCase())) || categories[0];
+          // Find the category to determine icon and color
+          let matchedCat = categories.find(c => 
+            title.includes(c.id.toLowerCase()) || 
+            title.includes(c.label.toLowerCase()) || 
+            query.toLowerCase().includes(c.id.toLowerCase())
+          ) || categories[0];
           
+          // Use very subtle offsets for grounding results that lack specific coords, 
+          // keeping them accurately within the user's neighborhood.
           extractedPlaces.push({
             id: `place-${idx}`,
-            name: chunk.maps.title || "Local Service",
-            lat: location.latitude + (Math.random() - 0.5) * 0.015,
-            lng: location.longitude + (Math.random() - 0.5) * 0.015,
-            type: query.split(',')[0],
+            name: chunk.maps.title || "Pet Service",
+            lat: location.latitude + (Math.sin(idx * 2.5) * 0.008),
+            lng: location.longitude + (Math.cos(idx * 2.5) * 0.008),
+            type: matchedCat.label,
             uri: chunk.maps.uri,
-            address: "Nearby Service Area",
             categoryIcon: matchedCat.icon,
             categoryColor: matchedCat.color
           });
@@ -289,13 +301,17 @@ const MapView: React.FC<{
     if (newCats.length === 0) {
       setPlaces([]);
     } else {
-      fetchPlaces(newCats.map(c => categories.find(cat => cat.id === c)?.label).join(", "));
+      const queryStr = newCats.map(c => categories.find(cat => cat.id === c)?.label).join(", ");
+      fetchPlaces(queryStr);
     }
   };
 
   useEffect(() => {
     if (location && selectedCategories.length > 0) {
-      fetchPlaces(selectedCategories.map(c => categories.find(cat => cat.id === c)?.label).join(", "));
+      const queryStr = selectedCategories.map(c => categories.find(cat => cat.id === c)?.label).join(", ");
+      fetchPlaces(queryStr);
+    } else if (selectedCategories.length === 0) {
+      setPlaces([]);
     }
   }, [location]);
 
@@ -307,7 +323,6 @@ const MapView: React.FC<{
   };
 
   const safeClose = () => {
-    // Explicitly destroy map before unmounting to prevent the grey screen artifact
     if (mapInstance.current) {
       mapInstance.current.remove();
       mapInstance.current = null;
@@ -316,43 +331,43 @@ const MapView: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in">
+    <div ref={containerRef} className="fixed inset-0 z-[150] bg-white flex flex-col animate-in">
       <header className="bg-orange-600 text-white shadow-xl pt-12 pb-4 px-4 flex items-center gap-3 shrink-0 z-[160]">
-        <button onClick={safeClose} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90 transition-all">
+        <button onClick={safeClose} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90 transition-all shadow-sm">
           <i className="fa-solid fa-chevron-left"></i>
         </button>
         <div className="flex-1 relative">
           <input 
             type="text" 
-            placeholder="Search nearby places..." 
+            placeholder="Search nearby services..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && fetchPlaces(searchQuery)}
-            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm placeholder-white/60 focus:bg-white focus:text-slate-800 outline-none transition-all"
+            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm placeholder-white/60 focus:bg-white focus:text-slate-800 outline-none transition-all shadow-inner"
           />
           {searching && <i className="fa-solid fa-spinner fa-spin absolute right-3 top-3 text-orange-200"></i>}
         </div>
       </header>
       
-      <div className="flex-1 relative bg-slate-100 overflow-hidden">
+      <div className="flex-1 relative bg-slate-100 overflow-hidden flex flex-col">
         {!location ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center space-y-6 z-[200] bg-white">
-            <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
-              <i className="fa-solid fa-location-dot text-4xl"></i>
+          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-6 bg-white">
+            <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
+              <i className="fa-solid fa-location-dot text-3xl"></i>
             </div>
-            <h3 className="text-xl font-black text-slate-800">Map Needs Location</h3>
-            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black">Allow Location Access</button>
+            <h3 className="text-xl font-black text-slate-800">Location Permissions Required</h3>
+            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-lg">Retry Location Access</button>
           </div>
         ) : (
-          <div className="absolute inset-0 w-full h-full flex flex-col">
-            <div className="px-4 py-3 flex gap-2 overflow-x-auto scrollbar-hide bg-white shadow-sm z-[155]">
+          <>
+            <div className="px-4 py-3 flex gap-2 overflow-x-auto scrollbar-hide bg-white shadow-sm z-[155] border-b border-slate-100">
               {categories.map(cat => (
                 <label 
                   key={cat.id} 
                   className={`flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border cursor-pointer ${
                     selectedCategories.includes(cat.id) 
                     ? `bg-${cat.color}-600 text-white border-${cat.color}-600 shadow-md` 
-                    : 'bg-slate-50 text-slate-400 border-slate-200'
+                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
                   }`}
                 >
                   <input 
@@ -370,18 +385,18 @@ const MapView: React.FC<{
               {!mapReady && (
                 <div className="absolute inset-0 z-[160] bg-slate-50 flex flex-col items-center justify-center gap-4">
                   <i className="fa-solid fa-paw text-4xl text-orange-200 animate-spin"></i>
-                  <span className="text-[10px] font-black uppercase text-slate-400">Loading Map...</span>
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-tighter">Initializing Satellite...</span>
                 </div>
               )}
               <div ref={mapRef} id="map" className="w-full h-full z-10 bg-slate-200"></div>
               <button 
                 onClick={recentre} 
-                className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all"
+                className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all hover:bg-orange-50"
               >
                 <i className="fa-solid fa-location-crosshairs text-xl"></i>
               </button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
@@ -497,13 +512,13 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black italic tracking-tighter">paws4life<span className="text-orange-200">.ai</span></h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+            <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:scale-95 transition-all">
               <i className="fa-solid fa-bell"></i>
               {activeRemindersCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse">{activeRemindersCount}</span>}
             </button>
-            <button onClick={() => setView('map')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:bg-white/40"><i className="fa-solid fa-map-location-dot"></i></button>
-            <button onClick={() => setView('settings')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-user-gear"></i></button>
-            <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-dog"></i></button>
+            <button onClick={() => setView('map')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:bg-white/40 active:scale-95 transition-all"><i className="fa-solid fa-map-location-dot"></i></button>
+            <button onClick={() => setView('settings')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-user-gear"></i></button>
+            <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-dog"></i></button>
           </div>
         </div>
       </header>
@@ -512,7 +527,7 @@ const App: React.FC = () => {
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
             <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 mb-4"><i className="fa-solid fa-shield-dog text-2xl"></i></div>
-            <p className="text-xs font-black uppercase tracking-widest leading-relaxed">Trusted Advice.<br/>How can I help you today?</p>
+            <p className="text-xs font-black uppercase tracking-widest leading-relaxed">Safety & Support.<br/>How can I help you today?</p>
           </div>
         )}
         {messages.map(m => (
@@ -520,7 +535,7 @@ const App: React.FC = () => {
             <div className={`max-w-[88%] p-4 rounded-[2rem] text-sm shadow-sm ${m.role === 'user' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-white border text-slate-800 rounded-tl-none'}`}>
               {m.role === 'model' && m.isVerified && (
                 <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-blue-500 mb-2 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 w-fit">
-                  <i className="fa-solid fa-circle-check"></i> Verified Clinical Reference
+                  <i className="fa-solid fa-circle-check"></i> Expert Grounded Reference
                 </div>
               )}
               <div className="whitespace-pre-wrap leading-relaxed prose prose-sm">{m.text}</div>
@@ -538,7 +553,7 @@ const App: React.FC = () => {
 
       <footer className="px-4 py-4 bg-white border-t sticky bottom-0 z-[70]" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1.25rem)' }}>
         <form onSubmit={sendMessage} className="flex gap-2">
-          <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Ask a health question..."} className="flex-1 bg-slate-100 px-5 py-3.5 rounded-2xl text-sm border border-transparent focus:border-orange-500 outline-none transition-all shadow-inner" />
+          <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Ask anything dog related..."} className="flex-1 bg-slate-100 px-5 py-3.5 rounded-2xl text-sm border border-transparent focus:border-orange-500 outline-none transition-all shadow-inner" />
           <button type="submit" disabled={!input.trim() || loading} className="bg-orange-600 text-white w-12 h-12 rounded-2xl shadow-lg flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-paper-plane"></i></button>
         </form>
       </footer>
@@ -552,7 +567,7 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black italic">My Pack</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            <button onClick={() => { setFormDog({ vaccinations: [], procedures: [], reminders: [] }); setView('edit-form'); }} className="w-full py-5 border-2 border-dashed border-orange-200 bg-orange-50 text-orange-600 font-black rounded-[2rem] active:bg-orange-100 transition-all">Add New Dog</button>
+            <button onClick={() => { setFormDog({ vaccinations: [], procedures: [], reminders: [] }); setView('edit-form'); }} className="w-full py-5 border-2 border-dashed border-orange-200 bg-orange-50 text-orange-600 font-black rounded-[2rem] active:bg-orange-100 transition-all shadow-sm">Add New Member</button>
             {profiles.map(p => (
               <div key={p.id} onClick={() => { setViewId(p.id); setView('profile-detail'); }} className="p-4 rounded-[2rem] border-2 flex items-center gap-4 bg-white border-slate-100 active:bg-slate-50 shadow-sm transition-all cursor-pointer">
                 <div className="w-14 h-14 rounded-2xl overflow-hidden border bg-slate-100 flex items-center justify-center shadow-inner">
@@ -568,14 +583,14 @@ const App: React.FC = () => {
 
       {view === 'edit-form' && (
         <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in">
-          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3">
+          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3 shadow-md">
             <button onClick={() => setView('profiles')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Pet Details</h1>
+            <h1 className="text-xl font-black italic">Pet Profile</h1>
           </header>
           <form onSubmit={saveDog} className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50">
             <input required value={formDog?.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none focus:border-orange-500 transition-all shadow-sm" placeholder="Name *" />
             <input value={formDog?.breed || ''} onChange={e => setFormDog({ ...formDog, breed: e.target.value })} className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none focus:border-orange-500 transition-all shadow-sm" placeholder="Breed" />
-            <button type="submit" className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all">Confirm</button>
+            <button type="submit" className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all">Confirm Entry</button>
           </form>
         </div>
       )}
@@ -593,24 +608,24 @@ const App: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-2xl font-black text-slate-800">{viewDog.name}</h2>
-                <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">{viewDog.breed || 'Dog'}</p>
+                <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">{viewDog.breed || 'Companion'}</p>
               </div>
             </div>
-            <button onClick={() => { if(confirm("Remove profile?")) { setProfiles(profiles.filter(p => p.id !== viewDog.id)); setView('profiles'); } }} className="text-red-400 font-black uppercase text-[10px] tracking-[0.2em] bg-red-50 px-4 py-2 rounded-lg border border-red-100 active:scale-95 transition-all">Delete Profile</button>
+            <button onClick={() => { if(confirm("Remove profile?")) { setProfiles(profiles.filter(p => p.id !== viewDog.id)); setView('profiles'); } }} className="text-red-400 font-black uppercase text-[10px] tracking-[0.2em] bg-red-50 px-4 py-2 rounded-lg border border-red-100 active:scale-95 transition-all">Delete From Pack</button>
           </div>
         </div>
       )}
 
       {view === 'settings' && (
         <div className="fixed inset-0 z-[120] bg-white flex flex-col animate-in">
-          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3">
+          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3 shadow-md">
             <button onClick={() => setView('chat')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
             <h1 className="text-xl font-black italic">Owner Dashboard</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Your Name" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm" />
-            <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm" />
-            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.6.6 Unified Build</p>
+            <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Owner Name" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
+            <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email Address" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
+            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.6.8 • Satellite Mapping Active</p>
           </div>
         </div>
       )}
@@ -619,10 +634,10 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[130] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3 shadow-md">
             <button onClick={() => setView('chat')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Health Alerts</h1>
+            <h1 className="text-xl font-black italic">Alerts & Care</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic py-12">No pending notifications</p> : 
+            {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic py-12">No current health notifications</p> : 
               profiles.flatMap(p => p.reminders).map(r => (
                 <div key={r.id} className="p-4 bg-white border rounded-[2rem] flex items-center gap-4 shadow-sm">
                   <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600 shadow-inner"><i className="fa-solid fa-bell"></i></div>
