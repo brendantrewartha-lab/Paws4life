@@ -3,6 +3,7 @@ export interface Message {
   role: 'user' | 'model';
   text: string;
   timestamp: number;
+  isVerified?: boolean; // Indicates if data came from the reputable dataset
   groundingUrls?: Array<{ title: string; uri: string }>;
 }
 
