@@ -13,9 +13,10 @@ export interface DogProfile {
   age: string;
   weight: string;
   allergies?: string;
-  // Fix: Added missing properties used in geminiService.ts
   conditions?: string;
   homeLocation?: string;
+  vaccinations?: string;
+  procedures?: string;
   photo?: string; // base64
 }
 
@@ -24,7 +25,6 @@ export interface UserLocation {
   longitude: number;
 }
 
-// Fix: Added exported AdSpot member requested by AdBanner.tsx
 export interface AdSpot {
   id: string;
   title: string;

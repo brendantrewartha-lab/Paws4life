@@ -7,13 +7,12 @@
     
     <!-- PWA / iOS Support -->
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <!-- 'default' prevents the app from sliding behind the notch in standalone mode -->
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="paws4life.ai">
     
-    <!-- Flat Round Icons ensure a colored background instead of black on iOS -->
-    <link rel="apple-touch-icon" href="https://img.icons8.com/flat-round/512/dog-paw.png">
-    <link rel="icon" type="image/png" href="https://img.icons8.com/flat-round/512/dog-paw.png">
+    <!-- Fluency Icon ensures it looks like a paw print, not a 'P' -->
+    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/512/dog-paw.png">
+    <link rel="icon" type="image/png" href="https://img.icons8.com/fluency/512/dog-paw.png">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#ea580c">
 
@@ -32,6 +31,8 @@
         font-family: 'Inter', system-ui, -apple-system, sans-serif; 
         background: #f8fafc; 
         overscroll-behavior: none;
+        margin: 0;
+        padding: 0;
       }
       
       .animate-in { animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
