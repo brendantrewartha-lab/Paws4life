@@ -96,7 +96,7 @@ const MapView: React.FC<{
   const [searchQuery, setSearchQuery] = useState('');
   const [places, setPlaces] = useState<MapPlace[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]); // Default empty as requested
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(['Vet']); // Start with Vets as default
 
   const categories = [
     { id: 'Vet', label: 'Vets', icon: 'fa-stethoscope', color: 'orange' },
@@ -125,6 +125,7 @@ const MapView: React.FC<{
         detectRetina: true
       }).addTo(mapInstance.current);
 
+      // User location marker
       L.marker([location.latitude, location.longitude], { 
         icon: L.divIcon({ 
           html: '<div class="relative w-8 h-8 flex items-center justify-center"><div class="absolute inset-0 bg-blue-500 rounded-full opacity-30 animate-ping"></div><div class="relative w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div></div>', 
@@ -134,13 +135,14 @@ const MapView: React.FC<{
       }).addTo(mapInstance.current);
 
       setMapReady(true);
-      // Hard fix for grey screen on init
-      setTimeout(() => mapInstance.current?.invalidateSize(), 300);
-      setTimeout(() => mapInstance.current?.invalidateSize(), 800);
+      
+      // Fix potential grey screen by forcing layout re-calculation
+      setTimeout(() => mapInstance.current?.invalidateSize(), 200);
     };
 
     initMap();
 
+    // Observe size changes to keep map healthy on mobile rotation/keyboard
     const resizeObserver = new ResizeObserver(() => {
       if (mapInstance.current) mapInstance.current.invalidateSize();
     });
@@ -161,6 +163,7 @@ const MapView: React.FC<{
   useEffect(() => {
     if (!mapInstance.current) return;
 
+    // Remove existing markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
@@ -174,10 +177,10 @@ const MapView: React.FC<{
       }).addTo(mapInstance.current);
 
       const popupContent = `
-        <div class="p-3 min-w-[160px]">
+        <div class="p-3 min-w-[180px]">
           <h3 class="font-black text-slate-800 text-sm leading-tight mb-1">${place.name}</h3>
           <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">${place.type}</p>
-          ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all">Visit Website</a>` : '<div class="text-[10px] text-slate-400 italic">No website listed</div>'}
+          ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all">Visit Website</a>` : '<div class="text-[10px] text-slate-400 italic">No website available</div>'}
         </div>
       `;
 
@@ -208,7 +211,7 @@ const MapView: React.FC<{
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Find the following pet services near me: ${query}. Provide real local business results.`,
+        contents: `Find real local business services near me for: ${query}.`,
         config: {
           tools: [{ googleMaps: {} }],
           toolConfig: {
@@ -227,24 +230,36 @@ const MapView: React.FC<{
 
       chunks.forEach((chunk: any, idx: number) => {
         if (chunk.maps) {
-          const title = chunk.maps.title?.toLowerCase() || "";
-          // Enhanced Matching for icons
+          const uri = chunk.maps.uri || "";
+          const title = chunk.maps.title || "Pet Service";
+          
+          // CRITICAL FIX: Extract real coordinates from the Google Maps URI
+          // Format usually looks like: https://www.google.com/maps/place/.../@LAT,LNG,...
+          const coordsMatch = uri.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+          let lat = location.latitude;
+          let lng = location.longitude;
+
+          if (coordsMatch) {
+            lat = parseFloat(coordsMatch[1]);
+            lng = parseFloat(coordsMatch[2]);
+          } else {
+            // Fallback: Extremely tight jitter if coords aren't available, to prevent the "large circle" bug
+            lat += (Math.random() - 0.5) * 0.005;
+            lng += (Math.random() - 0.5) * 0.005;
+          }
+
+          // Match category icon accurately
           const matchedCat = categories.find(c => 
-            title.includes(c.id.toLowerCase()) || 
-            title.includes(c.label.toLowerCase().replace('dogs', '').trim()) ||
+            title.toLowerCase().includes(c.id.toLowerCase()) || 
+            title.toLowerCase().includes(c.label.toLowerCase().split(' ')[0]) ||
             query.toLowerCase().includes(c.id.toLowerCase())
           ) || categories[0];
-          
-          // Organic distribution instead of patterned circle
-          // Coords jittered subtly within ~3-5km for organic feel if exact coords aren't returned
-          const latJitter = (Math.random() - 0.5) * 0.03;
-          const lngJitter = (Math.random() - 0.5) * 0.03;
 
           extractedPlaces.push({
             id: `place-${idx}-${Date.now()}`,
-            name: chunk.maps.title || "Pet Business",
-            lat: location.latitude + latJitter,
-            lng: location.longitude + lngJitter,
+            name: title,
+            lat,
+            lng,
             type: matchedCat.label,
             uri: chunk.maps.uri,
             categoryIcon: matchedCat.icon,
@@ -255,7 +270,7 @@ const MapView: React.FC<{
 
       setPlaces(extractedPlaces);
     } catch (err) {
-      console.error("Map search error:", err);
+      console.error("Map query error:", err);
     } finally {
       setSearching(false);
     }
@@ -279,9 +294,7 @@ const MapView: React.FC<{
   const recentre = () => {
     if (mapInstance.current && location) {
       mapInstance.current.setView([location.latitude, location.longitude], 15);
-      // Multi-stage invalidation to kill grey screen artifacts
       setTimeout(() => mapInstance.current?.invalidateSize(), 50);
-      setTimeout(() => mapInstance.current?.invalidateSize(), 300);
     }
   };
 
@@ -320,8 +333,8 @@ const MapView: React.FC<{
             <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
               <i className="fa-solid fa-location-dot text-3xl"></i>
             </div>
-            <h3 className="text-xl font-black text-slate-800 tracking-tighter">Location Access Needed</h3>
-            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-lg">Retry GPS</button>
+            <h3 className="text-xl font-black text-slate-800">Waiting for GPS</h3>
+            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black">Enable Location</button>
           </div>
         ) : (
           <>
@@ -350,13 +363,13 @@ const MapView: React.FC<{
               {!mapReady && (
                 <div className="absolute inset-0 z-[160] bg-slate-50 flex flex-col items-center justify-center gap-4">
                   <i className="fa-solid fa-paw text-4xl text-orange-200 animate-spin"></i>
-                  <span className="text-[10px] font-black uppercase text-slate-400">Loading Map...</span>
+                  <span className="text-[10px] font-black uppercase text-slate-400">Loading Map View...</span>
                 </div>
               )}
               <div ref={mapRef} id="map" className="w-full h-full z-10 bg-slate-200"></div>
               <button 
                 onClick={recentre} 
-                className="absolute bottom-10 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all hover:bg-orange-50"
+                className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all hover:bg-orange-50"
               >
                 <i className="fa-solid fa-location-crosshairs text-xl"></i>
               </button>
@@ -500,7 +513,7 @@ const App: React.FC = () => {
             <div className={`max-w-[88%] p-4 rounded-[2rem] text-sm shadow-sm ${m.role === 'user' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-white border text-slate-800 rounded-tl-none'}`}>
               {m.role === 'model' && m.isVerified && (
                 <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-blue-500 mb-2 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 w-fit tracking-wider">
-                  <i className="fa-solid fa-circle-check"></i> Clinical Reference
+                  <i className="fa-solid fa-circle-check"></i> Expert Grounded Source
                 </div>
               )}
               <div className="whitespace-pre-wrap leading-relaxed prose prose-sm">{m.text}</div>
@@ -590,7 +603,7 @@ const App: React.FC = () => {
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
             <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Owner Name" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
             <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email Address" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
-            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.7.0 • Satellite & GPS Hardened</p>
+            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.7.5 • Location Accurate Mapping</p>
           </div>
         </div>
       )}
