@@ -20,9 +20,8 @@ const MapOverlay: React.FC<{ location: UserLocation | undefined; onClose: () => 
 
   return (
     <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
-      <header className="bg-orange-600 text-white shadow-lg">
-        {/* System Safe Area Spacer: Minimum 44px for iPhone notch */}
-        <div style={{ height: 'max(env(safe-area-inset-top), 44px)', backgroundColor: 'rgba(0,0,0,0.1)' }}></div>
+      <header className="bg-orange-600 text-white shadow-lg shrink-0">
+        <div style={{ height: 'max(env(safe-area-inset-top), 44px)' }}></div>
         <div className="px-4 py-4 flex justify-between items-center">
           <h2 className="font-bold flex items-center gap-2 text-lg"><i className="fa-solid fa-map-pin"></i> Nearby Services</h2>
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center hover:bg-white/20 rounded-full transition-colors"><i className="fa-solid fa-xmark text-2xl"></i></button>
@@ -58,7 +57,7 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
     const base64 = canvasRef.current.toDataURL('image/jpeg', 0.6).split(',')[1];
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const res = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: { parts: [{ inlineData: { data: base64, mimeType: 'image/jpeg' } }, { text: "Identify the dog breed in this image. Answer with ONLY the breed name." }] }
@@ -141,16 +140,16 @@ const App: React.FC = () => {
     setLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const context = currentDog ? `User dog: ${currentDog.name}, ${currentDog.breed}, ${currentDog.age}, ${currentDog.weight}.` : "No specific dog selected.";
       const isLocRequest = input.toLowerCase().match(/near|vet|park|clinic|where/);
       
       const response = await ai.models.generateContent({
-        model: (location && isLocRequest) ? 'gemini-2.5-flash' : 'gemini-3-flash-preview',
+        model: 'gemini-3-flash-preview',
         contents: messages.concat(userMsg).map(m => ({ role: m.role, parts: [{ text: m.text }] })),
         config: {
           systemInstruction: `You are paws4life.ai, a specialized canine expert. ${context} Be factual, helpful, and prioritize dog safety.`,
-          tools: (isLocRequest && location) ? [{ googleSearch: {} }, { googleMaps: {} }] : [{ googleSearch: {} }],
+          tools: [{ googleSearch: {} }],
         }
       });
 
@@ -160,7 +159,8 @@ const App: React.FC = () => {
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text, timestamp: Date.now(), groundingUrls: sources }]);
     } catch (err) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "⚠️ Connection Error. Ensure your API Key is valid.", timestamp: Date.now() }]);
+      console.error("API Error Details:", err);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "⚠️ Connection Error. Ensure your API Key is valid and the model is accessible.", timestamp: Date.now() }]);
     } finally {
       setLoading(false);
     }
@@ -236,20 +236,20 @@ const App: React.FC = () => {
     <div className="flex flex-col h-screen max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden font-sans">
       {/* Header with Robust Safe Area Spacer (Notch Proof) */}
       <header className="bg-orange-600 text-white shadow-xl z-[60] shrink-0">
-        <div style={{ height: 'max(env(safe-area-inset-top), 44px)' }} className="w-full opacity-0 pointer-events-none"></div>
+        <div style={{ height: 'max(env(safe-area-inset-top), 44px)' }} className="w-full"></div>
         <div className="px-5 pb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="bg-white/20 w-11 h-11 rounded-2xl flex items-center justify-center backdrop-blur-md">
+            <div className="bg-white/20 w-11 h-11 rounded-2xl flex items-center justify-center backdrop-blur-md shadow-inner">
               <i className="fa-solid fa-paw text-2xl text-white"></i>
             </div>
             <div>
               <h1 className="text-xl font-black italic tracking-tighter">paws4life<span className="text-orange-200">.ai</span></h1>
-              {currentDog && <div className="text-[10px] font-bold text-orange-200 uppercase tracking-widest bg-black/10 px-2 rounded-full inline-block">Talking about: {currentDog.name}</div>}
+              {currentDog && <div className="text-[10px] font-bold text-orange-200 uppercase tracking-widest bg-black/10 px-2 rounded-full inline-block shadow-sm">Talking about: {currentDog.name}</div>}
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setView('map')} className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center hover:bg-white/30 transition-all active:scale-90"><i className="fa-solid fa-map-location-dot text-lg"></i></button>
-            <button onClick={() => setView('profiles')} className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center hover:bg-white/30 transition-all active:scale-90"><i className="fa-solid fa-dog text-lg"></i></button>
+            <button onClick={() => setView('map')} className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center hover:bg-white/30 transition-all active:scale-90 shadow-sm"><i className="fa-solid fa-map-location-dot text-lg"></i></button>
+            <button onClick={() => setView('profiles')} className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center hover:bg-white/30 transition-all active:scale-90 shadow-sm"><i className="fa-solid fa-dog text-lg"></i></button>
           </div>
         </div>
       </header>
@@ -297,7 +297,7 @@ const App: React.FC = () => {
             type="text" 
             value={input} 
             onChange={e => setInput(e.target.value)} 
-            placeholder={currentDog ? `Ask about ${currentDog.name}...` : "Type a pet health question..."} 
+            placeholder={currentDog ? `Ask about ${currentDog.name}...` : "Ask me a question..."} 
             className="flex-1 bg-slate-100 p-4 rounded-3xl text-sm outline-none border-2 border-transparent focus:border-orange-500 transition-all focus:bg-white" 
           />
           <button 
@@ -315,7 +315,7 @@ const App: React.FC = () => {
       {/* 1. Pack List Overlay */}
       {view === 'profiles' && (
         <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
-          <header className="bg-orange-600 text-white shadow-lg">
+          <header className="bg-orange-600 text-white shadow-lg shrink-0">
             <div style={{ height: 'max(env(safe-area-inset-top), 44px)' }}></div>
             <div className="px-6 py-4 flex justify-between items-center">
               <h2 className="text-xl font-black italic tracking-tight"><i className="fa-solid fa-dog mr-2"></i> My Pack</h2>
@@ -359,7 +359,7 @@ const App: React.FC = () => {
       {view === 'add' && (
         <div className="fixed inset-0 z-[105] bg-slate-900/80 backdrop-blur-sm flex items-end justify-center animate-in">
           <div 
-            className="bg-white w-full max-w-xl rounded-t-[40px] px-8 pt-8 pb-4 slide-in-up"
+            className="bg-white w-full max-w-xl rounded-t-[40px] px-8 pt-8 pb-4 slide-in-up shadow-2xl"
             style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
           >
             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6"></div>
@@ -384,7 +384,7 @@ const App: React.FC = () => {
       {/* 3. Detail Form Overlay */}
       {view === 'add-form' && (
         <div className="fixed inset-0 z-[120] bg-white flex flex-col animate-in">
-          <header className="bg-slate-50 border-b">
+          <header className="bg-slate-50 border-b shrink-0">
             <div style={{ height: 'max(env(safe-area-inset-top), 44px)' }}></div>
             <div className="flex justify-between items-center px-6 py-4">
               <h2 className="text-xl font-black text-slate-800">Pet Details</h2>
