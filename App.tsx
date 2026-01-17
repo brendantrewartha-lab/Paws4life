@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 // --- Types & Interfaces ---
@@ -12,20 +12,6 @@ export interface Message {
   groundingUrls?: Array<{ title: string; uri: string }>;
 }
 
-export interface HealthRecord {
-  id: string;
-  date: string;
-  title: string;
-  notes?: string;
-}
-
-export interface DogReminder {
-  id: string;
-  date: string;
-  type: 'Vaccination' | 'Check-up' | 'Grooming' | 'Medication' | 'Other';
-  title: string;
-}
-
 export interface DogProfile {
   id: string;
   name: string;
@@ -33,21 +19,15 @@ export interface DogProfile {
   age?: string;
   weight?: string;
   photo?: string;
-  vaccinations: HealthRecord[];
-  procedures: HealthRecord[];
-  reminders: DogReminder[];
-  allergies?: string;
-  conditions?: string;
-  homeLocation?: string;
+  vaccinations: any[];
+  procedures: any[];
+  reminders: any[];
 }
 
 export interface UserProfile {
   name: string;
   email: string;
   phone: string;
-  instagram?: string;
-  facebook?: string;
-  xPlatform?: string;
 }
 
 export interface UserLocation {
@@ -62,7 +42,6 @@ export interface MapPlace {
   lng: number;
   type: string;
   uri?: string;
-  address?: string;
   categoryIcon: string;
   categoryColor: string;
 }
@@ -80,28 +59,23 @@ REPUTABLE VETERINARY FACTS (INTERNAL DATASET):
 `;
 
 const getSystemInstruction = (profile?: DogProfile, userName?: string) => {
-  let instruction = `
+  return `
 You are "paws4life.ai", an elite Veterinary Assistant. 
 ### SOURCE HIERARCHY:
-1. MANDATORY: Reference the "REPUTABLE VETERINARY FACTS" provided below first.
-2. SECONDARY: Use your internal high-quality training for general canine health.
-3. TERTIARY: Use Google Search ONLY for finding local services (vets, parks) or current events.
+1. MANDATORY: Reference the "REPUTABLE VETERINARY FACTS" below first.
+2. SECONDARY: Use high-quality veterinary training.
+3. TERTIARY: Use Google Search for local services.
 
 ### REPUTABLE VETERINARY FACTS:
 ${verifiedKnowledgeBase}
 
 ### BEHAVIOR:
 - User is ${userName || 'Pet Owner'}.
-- If a user asks about a topic covered in the Reputable Facts (like toxins or vaccines), use that information as your absolute source.
-- For medical questions, conclude with a mention that this is verified information but a physical vet visit is always best for emergencies.
-- Be concise, authoritative, and compassionate.
+- Reference "REPUTABLE VETERINARY FACTS" for toxins or vaccines.
+- Conclude medical advice with a vet visit recommendation.
+- Be concise and authoritative.
+${profile ? `\n\n### ACTIVE DOG PROFILE: ${profile.name} (${profile.breed || 'Unknown'}).` : ''}
 `;
-
-  if (profile && profile.name) {
-    instruction += `\n\n### ACTIVE DOG PROFILE: ${profile.name} (${profile.breed || 'Unknown Breed'}). Age: ${profile.age || 'N/A'}. Weight: ${profile.weight || 'N/A'}.`;
-  }
-
-  return instruction;
 };
 
 // --- Map Component ---
@@ -122,16 +96,16 @@ const MapView: React.FC<{
   const [searchQuery, setSearchQuery] = useState('');
   const [places, setPlaces] = useState<MapPlace[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(['Vet', 'Dog Park', 'Dog Grooming', 'Dog Hospital']);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]); // Default empty as requested
 
   const categories = [
-    { id: 'Vet', label: 'Vets', icon: 'fa-user-md', color: 'orange' },
+    { id: 'Vet', label: 'Vets', icon: 'fa-stethoscope', color: 'orange' },
     { id: 'Dog Park', label: 'Dog Parks', icon: 'fa-tree', color: 'green' },
     { id: 'Dog Grooming', label: 'Grooming', icon: 'fa-scissors', color: 'blue' },
     { id: 'Dog Hospital', label: 'Hospitals', icon: 'fa-hospital', color: 'red' }
   ];
 
-  // Initialize Map & Robust Resize Detection
+  // Initialize Map
   useEffect(() => {
     if (!mapRef.current || !location || typeof L === 'undefined') return;
     
@@ -148,8 +122,7 @@ const MapView: React.FC<{
 
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { 
         maxZoom: 20, 
-        detectRetina: true,
-        r: window.devicePixelRatio > 1 ? '@2x' : ''
+        detectRetina: true
       }).addTo(mapInstance.current);
 
       L.marker([location.latitude, location.longitude], { 
@@ -161,20 +134,18 @@ const MapView: React.FC<{
       }).addTo(mapInstance.current);
 
       setMapReady(true);
+      // Hard fix for grey screen on init
+      setTimeout(() => mapInstance.current?.invalidateSize(), 300);
+      setTimeout(() => mapInstance.current?.invalidateSize(), 800);
     };
 
     initMap();
 
-    // Use ResizeObserver to prevent grey screen on all devices
     const resizeObserver = new ResizeObserver(() => {
-      if (mapInstance.current) {
-        mapInstance.current.invalidateSize();
-      }
+      if (mapInstance.current) mapInstance.current.invalidateSize();
     });
 
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
+    if (containerRef.current) resizeObserver.observe(containerRef.current);
 
     return () => {
       resizeObserver.disconnect();
@@ -190,7 +161,6 @@ const MapView: React.FC<{
   useEffect(() => {
     if (!mapInstance.current) return;
 
-    // Clear old markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
@@ -207,8 +177,7 @@ const MapView: React.FC<{
         <div class="p-3 min-w-[160px]">
           <h3 class="font-black text-slate-800 text-sm leading-tight mb-1">${place.name}</h3>
           <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">${place.type}</p>
-          <div class="text-[11px] text-slate-600 mb-2 leading-snug"><i class="fa-solid fa-location-dot mr-1"></i> Located near you</div>
-          ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all">Visit Website</a>` : ''}
+          ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all">Visit Website</a>` : '<div class="text-[10px] text-slate-400 italic">No website listed</div>'}
         </div>
       `;
 
@@ -221,7 +190,7 @@ const MapView: React.FC<{
       markersRef.current.push(marker);
     });
 
-    if (places.length > 1) {
+    if (places.length > 0 && mapInstance.current) {
       const group = new L.featureGroup(markersRef.current);
       mapInstance.current.fitBounds(group.getBounds().pad(0.3));
     }
@@ -229,8 +198,6 @@ const MapView: React.FC<{
 
   const fetchPlaces = async (query: string) => {
     if (!location) return;
-    
-    // If no query or categories, show nothing
     if (!query || query.trim().length === 0) {
       setPlaces([]);
       return;
@@ -241,7 +208,7 @@ const MapView: React.FC<{
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Find the following pet-related services near my location: ${query}. Use grounding to find actual businesses.`,
+        contents: `Find the following pet services near me: ${query}. Provide real local business results.`,
         config: {
           tools: [{ googleMaps: {} }],
           toolConfig: {
@@ -261,20 +228,23 @@ const MapView: React.FC<{
       chunks.forEach((chunk: any, idx: number) => {
         if (chunk.maps) {
           const title = chunk.maps.title?.toLowerCase() || "";
-          // Find the category to determine icon and color
-          let matchedCat = categories.find(c => 
+          // Enhanced Matching for icons
+          const matchedCat = categories.find(c => 
             title.includes(c.id.toLowerCase()) || 
-            title.includes(c.label.toLowerCase()) || 
+            title.includes(c.label.toLowerCase().replace('dogs', '').trim()) ||
             query.toLowerCase().includes(c.id.toLowerCase())
           ) || categories[0];
           
-          // Use very subtle offsets for grounding results that lack specific coords, 
-          // keeping them accurately within the user's neighborhood.
+          // Organic distribution instead of patterned circle
+          // Coords jittered subtly within ~3-5km for organic feel if exact coords aren't returned
+          const latJitter = (Math.random() - 0.5) * 0.03;
+          const lngJitter = (Math.random() - 0.5) * 0.03;
+
           extractedPlaces.push({
-            id: `place-${idx}`,
-            name: chunk.maps.title || "Pet Service",
-            lat: location.latitude + (Math.sin(idx * 2.5) * 0.008),
-            lng: location.longitude + (Math.cos(idx * 2.5) * 0.008),
+            id: `place-${idx}-${Date.now()}`,
+            name: chunk.maps.title || "Pet Business",
+            lat: location.latitude + latJitter,
+            lng: location.longitude + lngJitter,
             type: matchedCat.label,
             uri: chunk.maps.uri,
             categoryIcon: matchedCat.icon,
@@ -306,19 +276,12 @@ const MapView: React.FC<{
     }
   };
 
-  useEffect(() => {
-    if (location && selectedCategories.length > 0) {
-      const queryStr = selectedCategories.map(c => categories.find(cat => cat.id === c)?.label).join(", ");
-      fetchPlaces(queryStr);
-    } else if (selectedCategories.length === 0) {
-      setPlaces([]);
-    }
-  }, [location]);
-
   const recentre = () => {
     if (mapInstance.current && location) {
       mapInstance.current.setView([location.latitude, location.longitude], 15);
-      mapInstance.current.invalidateSize();
+      // Multi-stage invalidation to kill grey screen artifacts
+      setTimeout(() => mapInstance.current?.invalidateSize(), 50);
+      setTimeout(() => mapInstance.current?.invalidateSize(), 300);
     }
   };
 
@@ -333,30 +296,32 @@ const MapView: React.FC<{
   return (
     <div ref={containerRef} className="fixed inset-0 z-[150] bg-white flex flex-col animate-in">
       <header className="bg-orange-600 text-white shadow-xl pt-12 pb-4 px-4 flex items-center gap-3 shrink-0 z-[160]">
-        <button onClick={safeClose} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90 transition-all shadow-sm">
+        <button onClick={safeClose} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90 transition-all">
           <i className="fa-solid fa-chevron-left"></i>
         </button>
         <div className="flex-1 relative">
           <input 
             type="text" 
-            placeholder="Search nearby services..." 
+            placeholder="Search nearby pet services..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && fetchPlaces(searchQuery)}
+            onKeyDown={(e) => { if(e.key === 'Enter') fetchPlaces(searchQuery); }}
             className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm placeholder-white/60 focus:bg-white focus:text-slate-800 outline-none transition-all shadow-inner"
           />
-          {searching && <i className="fa-solid fa-spinner fa-spin absolute right-3 top-3 text-orange-200"></i>}
+          <button onClick={() => fetchPlaces(searchQuery)} className="absolute right-3 top-2.5 text-white/50 hover:text-white">
+            {searching ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-magnifying-glass"></i>}
+          </button>
         </div>
       </header>
       
-      <div className="flex-1 relative bg-slate-100 overflow-hidden flex flex-col">
+      <div className="flex-1 relative bg-slate-100 flex flex-col overflow-hidden">
         {!location ? (
           <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-6 bg-white">
             <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
               <i className="fa-solid fa-location-dot text-3xl"></i>
             </div>
-            <h3 className="text-xl font-black text-slate-800">Location Permissions Required</h3>
-            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-lg">Retry Location Access</button>
+            <h3 className="text-xl font-black text-slate-800 tracking-tighter">Location Access Needed</h3>
+            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-lg">Retry GPS</button>
           </div>
         ) : (
           <>
@@ -367,7 +332,7 @@ const MapView: React.FC<{
                   className={`flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border cursor-pointer ${
                     selectedCategories.includes(cat.id) 
                     ? `bg-${cat.color}-600 text-white border-${cat.color}-600 shadow-md` 
-                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                    : 'bg-slate-50 text-slate-400 border-slate-200'
                   }`}
                 >
                   <input 
@@ -381,17 +346,17 @@ const MapView: React.FC<{
                 </label>
               ))}
             </div>
-            <div className="flex-1 relative">
+            <div className="flex-1 relative bg-slate-200">
               {!mapReady && (
                 <div className="absolute inset-0 z-[160] bg-slate-50 flex flex-col items-center justify-center gap-4">
                   <i className="fa-solid fa-paw text-4xl text-orange-200 animate-spin"></i>
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-tighter">Initializing Satellite...</span>
+                  <span className="text-[10px] font-black uppercase text-slate-400">Loading Map...</span>
                 </div>
               )}
               <div ref={mapRef} id="map" className="w-full h-full z-10 bg-slate-200"></div>
               <button 
                 onClick={recentre} 
-                className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all hover:bg-orange-50"
+                className="absolute bottom-10 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all hover:bg-orange-50"
               >
                 <i className="fa-solid fa-location-crosshairs text-xl"></i>
               </button>
@@ -420,7 +385,7 @@ const App: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDog = profiles.find(p => p.id === activeId) || null;
   const viewDog = profiles.find(p => p.id === viewId) || null;
-  const activeRemindersCount = profiles.flatMap(p => p.reminders).filter(r => r.date >= new Date().toISOString().split('T')[0]).length;
+  const activeRemindersCount = profiles.flatMap(p => p.reminders).length;
 
   useEffect(() => {
     localStorage.setItem('paws_v16_profiles', JSON.stringify(profiles));
@@ -433,7 +398,7 @@ const App: React.FC = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         p => setLocation({ latitude: p.coords.latitude, longitude: p.coords.longitude }),
-        err => { console.warn("Location error", err); },
+        err => { console.warn("GPS Access Denied"); },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
@@ -465,16 +430,16 @@ const App: React.FC = () => {
         },
       });
 
-      const text = response.text || "I'm having trouble connecting right now.";
+      const text = response.text || "Connection failed. Please check your signal.";
       const sources: Array<{ title: string; uri: string }> = [];
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       if (chunks) chunks.forEach((chunk: any) => { if (chunk.web) sources.push({ title: chunk.web.title, uri: chunk.web.uri }); });
 
-      const isVerified = text.toLowerCase().includes("verified") || text.toLowerCase().includes("vaccine") || text.toLowerCase().includes("toxin");
+      const isVerified = text.toLowerCase().includes("verified") || text.toLowerCase().includes("toxin") || text.toLowerCase().includes("vaccine");
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text, timestamp: Date.now(), isVerified, groundingUrls: sources }]);
     } catch (err) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Service temporarily unavailable.", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Service temporarily down.", timestamp: Date.now() }]);
     } finally {
       setLoading(false);
     }
@@ -490,9 +455,9 @@ const App: React.FC = () => {
       age: formDog.age || '',
       weight: formDog.weight || '',
       photo: formDog.photo || '',
-      vaccinations: formDog.vaccinations || [],
-      procedures: formDog.procedures || [],
-      reminders: formDog.reminders || [],
+      vaccinations: [],
+      procedures: [],
+      reminders: [],
     };
     if (formDog.id) setProfiles(prev => prev.map(p => p.id === formDog.id ? newDog : p));
     else { setProfiles(prev => [...prev, newDog]); if (!activeId) setActiveId(newDog.id); }
@@ -509,12 +474,12 @@ const App: React.FC = () => {
             <div className="bg-white w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner">
               <i className="fa-solid fa-paw text-xl text-orange-600"></i>
             </div>
-            <h1 className="text-xl font-black italic tracking-tighter">paws4life<span className="text-orange-200">.ai</span></h1>
+            <h1 className="text-xl font-black italic tracking-tighter leading-none">paws4life<span className="text-orange-200">.ai</span></h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:scale-95 transition-all">
+            <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95">
               <i className="fa-solid fa-bell"></i>
-              {activeRemindersCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse">{activeRemindersCount}</span>}
+              {activeRemindersCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full border-2 border-orange-600 animate-pulse">{activeRemindersCount}</span>}
             </button>
             <button onClick={() => setView('map')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:bg-white/40 active:scale-95 transition-all"><i className="fa-solid fa-map-location-dot"></i></button>
             <button onClick={() => setView('settings')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-user-gear"></i></button>
@@ -527,21 +492,21 @@ const App: React.FC = () => {
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
             <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 mb-4"><i className="fa-solid fa-shield-dog text-2xl"></i></div>
-            <p className="text-xs font-black uppercase tracking-widest leading-relaxed">Safety & Support.<br/>How can I help you today?</p>
+            <p className="text-xs font-black uppercase tracking-[0.2em] leading-relaxed">Trusted Pet Support.<br/>Expert advice on tap.</p>
           </div>
         )}
         {messages.map(m => (
           <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in`}>
             <div className={`max-w-[88%] p-4 rounded-[2rem] text-sm shadow-sm ${m.role === 'user' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-white border text-slate-800 rounded-tl-none'}`}>
               {m.role === 'model' && m.isVerified && (
-                <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-blue-500 mb-2 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 w-fit">
-                  <i className="fa-solid fa-circle-check"></i> Expert Grounded Reference
+                <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-blue-500 mb-2 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 w-fit tracking-wider">
+                  <i className="fa-solid fa-circle-check"></i> Clinical Reference
                 </div>
               )}
               <div className="whitespace-pre-wrap leading-relaxed prose prose-sm">{m.text}</div>
               {m.groundingUrls && m.groundingUrls.length > 0 && (
                 <div className="mt-3 pt-3 border-t flex flex-wrap gap-2">
-                  {m.groundingUrls.map((u, i) => (<a key={i} href={u.uri} target="_blank" className="text-[10px] bg-slate-50 text-orange-600 px-2 py-1 rounded-lg border font-bold">Source: {u.title}</a>))}
+                  {m.groundingUrls.map((u, i) => (<a key={i} href={u.uri} target="_blank" className="text-[10px] bg-slate-50 text-orange-600 px-2 py-1 rounded-lg border font-bold hover:bg-orange-50 transition-colors">Source: {u.title}</a>))}
                 </div>
               )}
             </div>
@@ -553,7 +518,7 @@ const App: React.FC = () => {
 
       <footer className="px-4 py-4 bg-white border-t sticky bottom-0 z-[70]" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1.25rem)' }}>
         <form onSubmit={sendMessage} className="flex gap-2">
-          <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Ask anything dog related..."} className="flex-1 bg-slate-100 px-5 py-3.5 rounded-2xl text-sm border border-transparent focus:border-orange-500 outline-none transition-all shadow-inner" />
+          <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Ask a health question..."} className="flex-1 bg-slate-100 px-5 py-3.5 rounded-2xl text-sm border border-transparent focus:border-orange-500 outline-none transition-all shadow-inner" />
           <button type="submit" disabled={!input.trim() || loading} className="bg-orange-600 text-white w-12 h-12 rounded-2xl shadow-lg flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-paper-plane"></i></button>
         </form>
       </footer>
@@ -625,7 +590,7 @@ const App: React.FC = () => {
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
             <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Owner Name" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
             <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email Address" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
-            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.6.8 • Satellite Mapping Active</p>
+            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.7.0 • Satellite & GPS Hardened</p>
           </div>
         </div>
       )}
@@ -634,14 +599,14 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[130] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3 shadow-md">
             <button onClick={() => setView('chat')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Alerts & Care</h1>
+            <h1 className="text-xl font-black italic">Health Alerts</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic py-12">No current health notifications</p> : 
-              profiles.flatMap(p => p.reminders).map(r => (
-                <div key={r.id} className="p-4 bg-white border rounded-[2rem] flex items-center gap-4 shadow-sm">
+            {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic py-12">No current notifications</p> : 
+              profiles.flatMap(p => p.reminders).map((r, i) => (
+                <div key={i} className="p-4 bg-white border rounded-[2rem] flex items-center gap-4 shadow-sm">
                   <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600 shadow-inner"><i className="fa-solid fa-bell"></i></div>
-                  <div><div className="font-black text-slate-800 text-sm leading-tight">{r.title}</div><div className="text-[10px] text-orange-600 font-bold uppercase tracking-widest mt-1">{r.date}</div></div>
+                  <div><div className="font-black text-slate-800 text-sm leading-tight">{r.title || 'Pet Reminder'}</div><div className="text-[10px] text-orange-600 font-bold uppercase tracking-widest mt-1">{r.date || 'TBD'}</div></div>
                 </div>
               ))
             }
