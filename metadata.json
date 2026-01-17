@@ -1,7 +1,9 @@
+
 {
   "name": "paws4life.ai: Canine Companion & Expert Advisor",
   "description": "The ultimate AI assistant for dog owners, providing veterinary-grounded advice, local dog service mapping, and breed-specific insights with integrated local pet commerce.",
   "requestFramePermissions": [
-    "geolocation"
+    "geolocation",
+    "camera"
   ]
 }
