@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { DogProfile, Message, UserLocation, HealthRecord, DogReminder, UserProfile } from './types';
 
-// --- Integrated Components to ensure build reliability ---
+// Declare L for Leaflet map integration
+declare const L: any;
+
+// --- Helper Components ---
 
 const Header: React.FC<{ title: string; onBack?: () => void; actions?: React.ReactNode }> = ({ title, onBack, actions }) => (
   <header className="bg-orange-600 text-white shadow-xl z-[60] shrink-0 border-b border-orange-500/30">
@@ -67,7 +70,6 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
     const base64 = canvasRef.current.toDataURL('image/jpeg', 0.6).split(',')[1];
     
     try {
-      // Use the provided API key directly without default fallback
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const res = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -97,7 +99,6 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
   );
 };
 
-// --- Record Editor Component (Calendar Support) ---
 interface RecordFormProps {
   type: 'vaccinations' | 'reminders';
   onSave: (title: string, date: string) => void;
@@ -133,6 +134,114 @@ const RecordForm: React.FC<RecordFormProps> = ({ type, onSave, onClose }) => {
   );
 };
 
+// --- Map View Component ---
+const MapView: React.FC<{ location?: UserLocation; onRefreshLocation: () => void; onClose: () => void }> = ({ location, onRefreshLocation, onClose }) => {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<any>(null);
+
+  useEffect(() => {
+    if (!mapRef.current || !location || typeof L === 'undefined') return;
+    
+    // Clear previous instance if any
+    if (mapInstance.current) {
+        mapInstance.current.remove();
+    }
+
+    // Initialize map with CartoDB Voyager High-Res Tiles
+    mapInstance.current = L.map(mapRef.current, {
+        zoomControl: false,
+        attributionControl: false
+    }).setView([location.latitude, location.longitude], 15);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20
+    }).addTo(mapInstance.current);
+
+    // Custom Icons
+    const userIcon = L.divIcon({ 
+        html: '<div class="w-6 h-6 bg-blue-500 rounded-full border-4 border-white shadow-lg animate-pulse"></div>', 
+        iconSize: [24, 24], 
+        className: 'user-marker' 
+    });
+    
+    const vetIcon = L.divIcon({ 
+        html: '<div class="w-10 h-10 bg-orange-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white"><i class="fa-solid fa-hospital"></i></div>', 
+        iconSize: [40, 40], 
+        className: 'vet-marker' 
+    });
+
+    const parkIcon = L.divIcon({ 
+        html: '<div class="w-10 h-10 bg-green-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white"><i class="fa-solid fa-tree"></i></div>', 
+        iconSize: [40, 40], 
+        className: 'park-marker' 
+    });
+
+    L.marker([location.latitude, location.longitude], { icon: userIcon }).addTo(mapInstance.current).bindPopup('<b class="text-orange-600">You are here</b>');
+    
+    // Simulated interesting spots
+    const poi = [
+        { lat: location.latitude + 0.003, lng: location.longitude + 0.002, name: 'Paws Veterinary Clinic', type: 'vet' },
+        { lat: location.latitude - 0.002, lng: location.longitude - 0.004, name: 'Bark Park Reserve', type: 'park' },
+        { lat: location.latitude + 0.006, lng: location.longitude - 0.001, name: 'The Happy Tail Groomers', type: 'vet' },
+        { lat: location.latitude - 0.005, lng: location.longitude + 0.005, name: 'Canine Meadows', type: 'park' },
+    ];
+
+    poi.forEach(spot => {
+        L.marker([spot.lat, spot.lng], { icon: spot.type === 'vet' ? vetIcon : parkIcon })
+          .addTo(mapInstance.current)
+          .bindPopup(`<b>${spot.name}</b><br><span class="text-slate-400 capitalize">${spot.type}</span>`);
+    });
+
+    return () => { if (mapInstance.current) mapInstance.current.remove(); };
+  }, [location]);
+
+  return (
+    <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in">
+      <Header title="Local Services" onBack={onClose} />
+      <div className="flex-1 relative bg-slate-50">
+        {!location ? (
+          <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center p-12 text-center space-y-6">
+            <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 animate-bounce">
+              <i className="fa-solid fa-location-dot text-4xl"></i>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-slate-800">Location Access Required</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">We need your location to show nearby vets, groomers, and dog-friendly parks.</p>
+            </div>
+            <button 
+              onClick={onRefreshLocation} 
+              className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-xl shadow-orange-600/20 active:scale-95 transition-all"
+            >
+              Allow Access
+            </button>
+          </div>
+        ) : (
+            <>
+                <div ref={mapRef} className="h-full w-full" id="map"></div>
+                <button 
+                    onClick={onRefreshLocation}
+                    className="absolute bottom-6 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center active:scale-90 transition-all border border-slate-100"
+                >
+                    <i className="fa-solid fa-location-crosshairs text-xl"></i>
+                </button>
+            </>
+        )}
+      </div>
+      <footer className="p-4 flex gap-3 overflow-x-auto scrollbar-hide bg-white border-t border-slate-100">
+        <div className="px-5 py-3 bg-blue-50 text-blue-600 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap flex items-center gap-2 border border-blue-100">
+          <div className="w-2 h-2 bg-blue-600 rounded-full"></div> Vets
+        </div>
+        <div className="px-5 py-3 bg-green-50 text-green-600 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap flex items-center gap-2 border border-green-100">
+            <div className="w-2 h-2 bg-green-600 rounded-full"></div> Parks
+        </div>
+        <div className="px-5 py-3 bg-orange-50 text-orange-600 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap flex items-center gap-2 border border-orange-100">
+            <div className="w-2 h-2 bg-orange-600 rounded-full"></div> Grooming
+        </div>
+      </footer>
+    </div>
+  );
+};
+
 // --- Main App ---
 
 const App: React.FC = () => {
@@ -163,10 +272,21 @@ const App: React.FC = () => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [profiles, user, activeId, messages]);
 
-  useEffect(() => {
+  const requestLocation = () => {
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(p => setLocation({ latitude: p.coords.latitude, longitude: p.coords.longitude }));
+      navigator.geolocation.getCurrentPosition(
+          p => setLocation({ latitude: p.coords.latitude, longitude: p.coords.longitude }),
+          err => {
+              console.warn("Location error:", err);
+              alert("Location permission denied. Please enable it in your device settings.");
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
     }
+  };
+
+  useEffect(() => {
+    requestLocation();
   }, []);
 
   const sendMessage = async (e?: React.FormEvent) => {
@@ -179,7 +299,6 @@ const App: React.FC = () => {
     setLoading(true);
 
     try {
-      // Use current API Key directly and upgrade to Pro model for specialized dog health reasoning
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const context = currentDog ? `User Dog: ${currentDog.name} (${currentDog.breed}). Vaccs: ${currentDog.vaccinations.map(v => v.title).join(', ')}.` : "";
       
@@ -379,7 +498,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {view === 'map' && <MapView location={location} onClose={() => setView('chat')} />}
+      {view === 'map' && <MapView location={location} onRefreshLocation={requestLocation} onClose={() => setView('chat')} />}
       {view === 'reminders-list' && (
         <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
           <Header title="Reminders" onBack={() => setView('chat')} />
@@ -407,42 +526,6 @@ const App: React.FC = () => {
           onClose={() => setRecordForm(null)} 
         />
       )}
-    </div>
-  );
-};
-
-// --- Embedded MapView to fix build resolution issues ---
-// Declare L for Leaflet map integration
-declare const L: any;
-const MapView: React.FC<{ location?: UserLocation; onClose: () => void }> = ({ location, onClose }) => {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<any>(null);
-
-  useEffect(() => {
-    if (!mapRef.current || !location || typeof L === 'undefined') return;
-    mapInstance.current = L.map(mapRef.current).setView([location.latitude, location.longitude], 14);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
-    
-    const userIcon = L.divIcon({ html: '<div class="bg-blue-500 w-4 h-4 rounded-full border-2 border-white shadow-lg"></div>', iconSize: [16, 16] });
-    L.marker([location.latitude, location.longitude], { icon: userIcon }).addTo(mapInstance.current).bindPopup('<b>You</b>');
-    
-    const vetIcon = L.divIcon({ html: '<div class="bg-orange-600 text-white w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg"><i class="fa-solid fa-hospital text-[10px]"></i></div>', iconSize: [24, 24] });
-    L.marker([location.latitude + 0.005, location.longitude + 0.005], { icon: vetIcon }).addTo(mapInstance.current).bindPopup('Central Vet');
-    
-    return () => { if (mapInstance.current) mapInstance.current.remove(); };
-  }, [location]);
-
-  return (
-    <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in">
-      <Header title="Local Help" onBack={onClose} />
-      <div className="flex-1 relative">
-        {!location && <div className="absolute inset-0 bg-slate-50 flex items-center justify-center text-slate-300 font-bold">Location access required</div>}
-        <div ref={mapRef} className="h-full w-full" id="map"></div>
-      </div>
-      <footer className="p-4 flex gap-2 overflow-x-auto scrollbar-hide bg-white border-t">
-        <div className="px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap">Vets Near You</div>
-        <div className="px-4 py-2 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap">Dog Parks</div>
-      </footer>
     </div>
   );
 };
