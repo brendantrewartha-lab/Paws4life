@@ -10,16 +10,16 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="paws4life.ai">
     
-    <!-- Fluency Icon ensures it looks like a paw print, not a 'P' -->
-    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/512/dog-paw.png">
-    <link rel="icon" type="image/png" href="https://img.icons8.com/fluency/512/dog-paw.png">
+    <!-- Distinct Paw Print Icon (Color style avoids 'P' lookalike) -->
+    <link rel="apple-touch-icon" href="https://img.icons8.com/color/512/dog-paw.png">
+    <link rel="icon" type="image/png" href="https://img.icons8.com/color/512/dog-paw.png">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#ea580c">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
       #map { height: 100%; width: 100%; z-index: 1; }
       .leaflet-popup-content-wrapper { border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); }
@@ -37,14 +37,19 @@
       
       .animate-in { animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-      .slide-in-up { animation: slideUp 0.4s cubic-bezier(0, 0.55, 0.45, 1); }
-      @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       
       html, body {
         position: fixed;
         overflow: hidden;
         width: 100%;
         height: 100%;
+      }
+
+      /* Custom Date Input Styling */
+      input[type="date"] {
+        appearance: none;
+        -webkit-appearance: none;
+        min-height: 1.2em;
       }
     </style>
 <script type="importmap">
