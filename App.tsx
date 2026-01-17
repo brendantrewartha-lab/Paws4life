@@ -135,32 +135,49 @@ const App: React.FC = () => {
     if (!input.trim() || loading) return;
 
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: input, timestamp: Date.now() };
-    setMessages(prev => [...prev, userMsg]);
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
+    const currentInput = input;
     setInput('');
     setLoading(true);
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const context = currentDog ? `User dog: ${currentDog.name}, ${currentDog.breed}, ${currentDog.age}, ${currentDog.weight}.` : "No specific dog selected.";
-      const isLocRequest = input.toLowerCase().match(/near|vet|park|clinic|where/);
       
-      const response = await ai.models.generateContent({
+      // Use Chats API for better multi-turn conversation
+      const chat = ai.chats.create({
         model: 'gemini-3-flash-preview',
-        contents: messages.concat(userMsg).map(m => ({ role: m.role, parts: [{ text: m.text }] })),
         config: {
           systemInstruction: `You are paws4life.ai, a specialized canine expert. ${context} Be factual, helpful, and prioritize dog safety.`,
           tools: [{ googleSearch: {} }],
-        }
+        },
+        history: messages.map(m => ({ role: m.role, parts: [{ text: m.text }] }))
       });
 
+      const response = await chat.sendMessage({ message: currentInput });
       const text = response.text || "I'm having trouble thinking clearly. Please try again.";
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      const sources = chunks?.map((c: any) => ({ title: c.web?.title || c.maps?.title || 'Info', uri: c.web?.uri || c.maps?.uri || '#' })) || [];
+      const sources = chunks?.map((c: any) => ({ 
+        title: c.web?.title || c.maps?.title || 'Information Source', 
+        uri: c.web?.uri || c.maps?.uri || '#' 
+      })) || [];
 
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text, timestamp: Date.now(), groundingUrls: sources }]);
+      setMessages(prev => [...prev, { 
+        id: Date.now().toString(), 
+        role: 'model', 
+        text, 
+        timestamp: Date.now(), 
+        groundingUrls: sources 
+      }]);
     } catch (err) {
-      console.error("API Error Details:", err);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "⚠️ Connection Error. Ensure your API Key is valid and the model is accessible.", timestamp: Date.now() }]);
+      console.error("Gemini API Error:", err);
+      setMessages(prev => [...prev, { 
+        id: Date.now().toString(), 
+        role: 'model', 
+        text: "⚠️ Connection Error. Ensure your API Key is valid and the model is accessible. Please check your internet connection and try again.", 
+        timestamp: Date.now() 
+      }]);
     } finally {
       setLoading(false);
     }
