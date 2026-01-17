@@ -30,10 +30,18 @@ export interface DogProfile {
   vaccinations: HealthRecord[];
   procedures: HealthRecord[];
   reminders: DogReminder[];
-  // Fix: Added missing properties used in geminiService.ts
   allergies?: string;
   conditions?: string;
   homeLocation?: string;
+}
+
+export interface UserProfile {
+  name: string;
+  email: string;
+  phone: string;
+  instagram?: string;
+  facebook?: string;
+  xPlatform?: string;
 }
 
 export interface UserLocation {
@@ -41,7 +49,6 @@ export interface UserLocation {
   longitude: number;
 }
 
-// Fix: Added missing AdSpot interface used in AdBanner.tsx
 export interface AdSpot {
   id: string;
   title: string;
