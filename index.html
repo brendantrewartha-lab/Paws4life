@@ -9,7 +9,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="paws4life.ai">
-    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/180/dog.png">
+    <!-- Orange Paw Icon -->
+    <link rel="apple-touch-icon" href="https://img.icons8.com/ios-filled/180/ea580c/pawprint.png">
     <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#ea580c">
 
@@ -28,16 +29,14 @@
       body { 
         -webkit-tap-highlight-color: transparent; 
         font-family: 'Inter', system-ui, -apple-system, sans-serif; 
-        background: #ea580c; /* Matches header for smooth safe area transition */
+        background: #ea580c; 
       }
       
-      /* Smooth transitions for overlays */
       .animate-in { animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
       .slide-in-up { animation: slideUp 0.4s cubic-bezier(0, 0.55, 0.45, 1); }
       @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       
-      /* Prevent bounce scroll on iOS */
       html, body {
         position: fixed;
         overflow: hidden;

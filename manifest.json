@@ -2,28 +2,28 @@
   "name": "paws4life.ai",
   "short_name": "paws4life",
   "description": "Canine Companion & Expert Advisor",
-  "start_url": "./index.html",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
+  "background_color": "#ea580c",
   "theme_color": "#ea580c",
   "icons": [
     {
-      "src": "https://img.icons8.com/fluency/96/dog.png",
+      "src": "https://img.icons8.com/ios-filled/96/ea580c/pawprint.png",
       "sizes": "96x96",
       "type": "image/png"
     },
     {
-      "src": "https://img.icons8.com/fluency/144/dog.png",
+      "src": "https://img.icons8.com/ios-filled/144/ea580c/pawprint.png",
       "sizes": "144x144",
       "type": "image/png"
     },
     {
-      "src": "https://img.icons8.com/fluency/192/dog.png",
+      "src": "https://img.icons8.com/ios-filled/192/ea580c/pawprint.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://img.icons8.com/fluency/512/dog.png",
+      "src": "https://img.icons8.com/ios-filled/512/ea580c/pawprint.png",
       "sizes": "512x512",
       "type": "image/png"
     }
