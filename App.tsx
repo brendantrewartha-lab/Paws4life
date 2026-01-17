@@ -64,6 +64,7 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
       });
       onResult(res.text?.trim() || "Unknown Breed", `data:image/jpeg;base64,${base64}`);
     } catch (e) {
+      console.error("Scanning error:", e);
       alert("AI Analysis Error. Defaulting to manual.");
       onResult("", `data:image/jpeg;base64,${base64}`);
     }
@@ -145,14 +146,16 @@ const App: React.FC = () => {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const context = currentDog ? `User dog: ${currentDog.name}, ${currentDog.breed}, ${currentDog.age}, ${currentDog.weight}.` : "No specific dog selected.";
       
-      // Use Chats API for better multi-turn conversation
       const chat = ai.chats.create({
         model: 'gemini-3-flash-preview',
         config: {
           systemInstruction: `You are paws4life.ai, a specialized canine expert. ${context} Be factual, helpful, and prioritize dog safety.`,
           tools: [{ googleSearch: {} }],
         },
-        history: messages.map(m => ({ role: m.role, parts: [{ text: m.text }] }))
+        history: messages.map(m => ({ 
+          role: m.role === 'model' ? 'model' : 'user', 
+          parts: [{ text: m.text }] 
+        }))
       });
 
       const response = await chat.sendMessage({ message: currentInput });
@@ -171,11 +174,11 @@ const App: React.FC = () => {
         groundingUrls: sources 
       }]);
     } catch (err) {
-      console.error("Gemini API Error:", err);
+      console.error("Gemini API Connection Error:", err);
       setMessages(prev => [...prev, { 
         id: Date.now().toString(), 
         role: 'model', 
-        text: "⚠️ Connection Error. Ensure your API Key is valid and the model is accessible. Please check your internet connection and try again.", 
+        text: "⚠️ Connection Error. Ensure your API Key is valid and Google Search is accessible. Please check your internet connection and try again.", 
         timestamp: Date.now() 
       }]);
     } finally {
@@ -327,9 +330,7 @@ const App: React.FC = () => {
         </form>
       </footer>
 
-      {/* --- Overlays --- */}
-
-      {/* 1. Pack List Overlay */}
+      {/* Overlays */}
       {view === 'profiles' && (
         <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white shadow-lg shrink-0">
@@ -372,7 +373,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* 2. Step Selector with Safe Area Bottom */}
       {view === 'add' && (
         <div className="fixed inset-0 z-[105] bg-slate-900/80 backdrop-blur-sm flex items-end justify-center animate-in">
           <div 
@@ -398,7 +398,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* 3. Detail Form Overlay */}
       {view === 'add-form' && (
         <div className="fixed inset-0 z-[120] bg-white flex flex-col animate-in">
           <header className="bg-slate-50 border-b shrink-0">
@@ -436,7 +435,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Camera Overlays */}
       {view === 'scan' && (
         <ScannerOverlay 
             onResult={(breed, photo) => { setFormDog({ breed, photo, name: '' }); setView('add-form'); }} 
@@ -450,7 +448,6 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Map Overlay */}
       {view === 'map' && <MapOverlay location={location} onClose={() => setView('chat')} />}
     </div>
   );
