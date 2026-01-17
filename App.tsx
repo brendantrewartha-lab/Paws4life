@@ -21,8 +21,7 @@ const MapOverlay: React.FC<{ location: UserLocation | undefined; onClose: () => 
   return (
     <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
       <header className="bg-orange-600 text-white shadow-lg shrink-0">
-        {/* iOS Notch Protection */}
-        <div style={{ paddingTop: 'max(env(safe-area-inset-top), 44px)' }}></div>
+        <div style={{ paddingTop: 'max(env(safe-area-inset-top), 80px)' }}></div>
         <div className="px-4 py-4 flex justify-between items-center">
           <h2 className="font-bold flex items-center gap-2 text-lg"><i className="fa-solid fa-map-pin"></i> Nearby Services</h2>
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center hover:bg-white/20 rounded-full transition-colors"><i className="fa-solid fa-xmark text-2xl"></i></button>
@@ -58,16 +57,21 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
     const base64 = canvasRef.current.toDataURL('image/jpeg', 0.6).split(',')[1];
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const apiKey = process.env.API_KEY;
+      if (!apiKey) throw new Error("API Key Missing");
+
+      const ai = new GoogleGenAI({ apiKey });
       const res = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: { parts: [{ inlineData: { data: base64, mimeType: 'image/jpeg' } }, { text: "Identify the dog breed in this image. Answer with ONLY the breed name." }] }
       });
       onResult(res.text?.trim() || "Unknown Breed", `data:image/jpeg;base64,${base64}`);
     } catch (e) {
-      console.error("Scan error:", e);
-      alert("AI Analysis Error. Defaulting to manual.");
+      console.error("Scan Error:", e);
+      alert("AI Scan Failed. Check your connection.");
       onResult("", `data:image/jpeg;base64,${base64}`);
+    } finally {
+      setAnalyzing(false);
     }
   };
 
@@ -85,7 +89,7 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
       <button 
         onClick={onClose} 
         className="absolute right-6 text-white p-4 bg-black/40 rounded-full backdrop-blur-md"
-        style={{ top: 'calc(max(env(safe-area-inset-top), 44px))' }}
+        style={{ top: 'calc(max(env(safe-area-inset-top), 80px))' }}
       >
         <i className="fa-solid fa-xmark text-xl"></i>
       </button>
@@ -96,7 +100,7 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
         <button onClick={capture} disabled={analyzing} className="w-20 h-20 rounded-full border-4 border-white bg-orange-600 flex items-center justify-center shadow-2xl active:scale-95 transition-all">
           {analyzing ? <i className="fa-solid fa-spinner fa-spin text-white text-2xl"></i> : <div className="w-12 h-12 bg-white rounded-full"></div>}
         </button>
-        <p className="text-white font-bold tracking-wide drop-shadow-md">{analyzing ? 'IDENTIFYING BREED...' : 'SNAP PHOTO'}</p>
+        <p className="text-white font-bold tracking-wide drop-shadow-md uppercase text-xs">{analyzing ? 'Identifying...' : 'Snap Photo'}</p>
       </div>
       <canvas ref={canvasRef} className="hidden" />
     </div>
@@ -114,7 +118,6 @@ const App: React.FC = () => {
   const [view, setView] = useState<'chat' | 'profiles' | 'add' | 'scan' | 'form-scan' | 'add-form' | 'map'>('chat');
   const [location, setLocation] = useState<UserLocation>();
   
-  // Profile Form State
   const [formDog, setFormDog] = useState<Partial<DogProfile>>({ name: '', breed: '', age: '', weight: '', photo: '' });
   
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -144,7 +147,10 @@ const App: React.FC = () => {
     setLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const apiKey = process.env.API_KEY;
+      if (!apiKey) throw new Error("API Key Missing");
+
+      const ai = new GoogleGenAI({ apiKey });
       const context = currentDog ? `User dog: ${currentDog.name}, ${currentDog.breed}, ${currentDog.age}, ${currentDog.weight}.` : "No specific dog selected.";
       
       const response = await ai.models.generateContent({
@@ -154,15 +160,15 @@ const App: React.FC = () => {
           parts: [{ text: m.text }]
         })),
         config: {
-          systemInstruction: `You are paws4life.ai, a specialized canine expert. ${context} Be factual, helpful, and prioritize dog safety.`,
+          systemInstruction: `You are paws4life.ai, a specialized canine expert assistant. ${context} Be factual, helpful, and prioritize dog safety above all. Use Markdown for styling.`,
           tools: [{ googleSearch: {} }],
         }
       });
 
-      const text = response.text || "I'm having trouble thinking clearly. Please try again.";
+      const text = response.text || "I couldn't generate a response. Please try again.";
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       const sources = chunks?.map((c: any) => ({ 
-        title: c.web?.title || c.maps?.title || 'Info Source', 
+        title: c.web?.title || c.maps?.title || 'Knowledge Source', 
         uri: c.web?.uri || c.maps?.uri || '#' 
       })) || [];
 
@@ -178,7 +184,7 @@ const App: React.FC = () => {
       setMessages(prev => [...prev, { 
         id: Date.now().toString(), 
         role: 'model', 
-        text: "⚠️ Connection Error. Ensure your API Key is valid and internet is available.", 
+        text: "⚠️ Connection Error. Ensure your API Key is valid and internet is available. If you're on a phone, try checking your data connection.", 
         timestamp: Date.now() 
       }]);
     } finally {
@@ -226,27 +232,19 @@ const App: React.FC = () => {
         </div>
       </div>
       <div className="flex gap-2 mt-1">
-        <button 
-          onClick={() => setView('form-scan')}
-          className="text-[10px] font-black uppercase bg-orange-100 text-orange-600 px-3 py-1.5 rounded-full hover:bg-orange-200 transition-colors"
-        >
+        <button onClick={() => setView('form-scan')} className="text-[10px] font-black uppercase bg-orange-100 text-orange-600 px-3 py-1.5 rounded-full">
           <i className="fa-solid fa-camera mr-1"></i> Take Photo
         </button>
-        <label className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-200 transition-colors cursor-pointer">
+        <label className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full cursor-pointer">
           <i className="fa-solid fa-upload mr-1"></i> Upload
-          <input 
-            type="file" 
-            accept="image/*" 
-            className="hidden" 
-            onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (re) => setFormDog(p => ({ ...p, photo: re.target?.result as string }));
-                    reader.readAsDataURL(file);
-                }
-            }}
-          />
+          <input type="file" accept="image/*" className="hidden" onChange={e => {
+            const file = e.target.files?.[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (re) => setFormDog(p => ({ ...p, photo: re.target?.result as string }));
+                reader.readAsDataURL(file);
+            }
+          }} />
         </label>
       </div>
     </div>
@@ -256,7 +254,7 @@ const App: React.FC = () => {
     <div className="flex flex-col h-screen max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden font-sans">
       {/* Notch-Proof Header */}
       <header className="bg-orange-600 text-white shadow-xl z-[60] shrink-0">
-        <div style={{ paddingTop: 'max(env(safe-area-inset-top), 44px)' }}></div>
+        <div style={{ paddingTop: 'max(env(safe-area-inset-top), 80px)' }}></div>
         <div className="px-5 pb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-white w-11 h-11 rounded-2xl flex items-center justify-center shadow-inner">
@@ -290,7 +288,7 @@ const App: React.FC = () => {
         {messages.map((m) => (
           <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in`}>
             <div className={`max-w-[90%] p-4 rounded-3xl shadow-sm text-sm ${m.role === 'user' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'}`}>
-              <div className="whitespace-pre-wrap leading-relaxed">{m.text}</div>
+              <div className="whitespace-pre-wrap leading-relaxed prose prose-slate prose-sm">{m.text}</div>
               {m.groundingUrls && m.groundingUrls.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
                   {m.groundingUrls.map((u, i) => (
@@ -320,30 +318,24 @@ const App: React.FC = () => {
             placeholder={currentDog ? `Ask about ${currentDog.name}...` : "Ask me a question..."} 
             className="flex-1 bg-slate-100 p-4 rounded-3xl text-sm outline-none border-2 border-transparent focus:border-orange-500 transition-all focus:bg-white shadow-inner" 
           />
-          <button 
-            type="submit" 
-            disabled={!input.trim() || loading} 
-            className="bg-orange-600 text-white w-14 h-14 rounded-3xl shadow-xl shadow-orange-600/30 flex items-center justify-center shrink-0 active:scale-95 disabled:bg-slate-200 disabled:shadow-none transition-all"
-          >
+          <button type="submit" disabled={!input.trim() || loading} className="bg-orange-600 text-white w-14 h-14 rounded-3xl shadow-xl shadow-orange-600/30 flex items-center justify-center shrink-0 active:scale-95 disabled:bg-slate-200 disabled:shadow-none transition-all">
             <i className="fa-solid fa-paper-plane text-xl"></i>
           </button>
         </form>
       </footer>
 
-      {/* --- Overlays --- */}
-
-      {/* 1. Pack List Overlay */}
+      {/* Overlays */}
       {view === 'profiles' && (
         <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white shadow-lg shrink-0">
-            <div style={{ paddingTop: 'max(env(safe-area-inset-top), 44px)' }}></div>
+            <div style={{ paddingTop: 'max(env(safe-area-inset-top), 80px)' }}></div>
             <div className="px-6 py-4 flex justify-between items-center">
               <h2 className="text-xl font-black italic tracking-tight"><i className="fa-solid fa-dog mr-2"></i> My Pack</h2>
               <button onClick={() => setView('chat')} className="p-2 hover:bg-white/20 rounded-full transition-colors"><i className="fa-solid fa-xmark text-2xl"></i></button>
             </div>
           </header>
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            <button onClick={() => setView('add')} className="w-full py-4 rounded-3xl border-2 border-dashed border-orange-300 bg-orange-50 text-orange-600 font-black text-lg hover:bg-orange-100 transition-all flex items-center justify-center gap-2 mb-4">
+            <button onClick={() => setView('add')} className="w-full py-4 rounded-3xl border-2 border-dashed border-orange-300 bg-orange-50 text-orange-600 font-black text-lg flex items-center justify-center gap-2 mb-4">
               <i className="fa-solid fa-plus"></i> Add New Dog
             </button>
             {profiles.length === 0 ? (
@@ -353,21 +345,15 @@ const App: React.FC = () => {
               </div>
             ) : (
               profiles.map(p => (
-                <div key={p.id} className={`p-4 rounded-3xl border-2 transition-all flex items-center gap-4 ${activeId === p.id ? 'bg-orange-50 border-orange-500 shadow-sm' : 'bg-white border-slate-100 hover:border-orange-200'}`}>
-                  <div className="w-20 h-20 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-100 shadow-inner">
+                <div key={p.id} className={`p-4 rounded-3xl border-2 flex items-center gap-4 ${activeId === p.id ? 'bg-orange-50 border-orange-500' : 'bg-white border-slate-100'}`}>
+                  <div className="w-20 h-20 rounded-2xl bg-slate-100 overflow-hidden shrink-0">
                     {p.photo ? <img src={p.photo} className="w-full h-full object-cover" /> : <i className="fa-solid fa-dog text-4xl text-slate-300 mt-4 ml-4"></i>}
                   </div>
                   <div className="flex-1 min-w-0" onClick={() => { setActiveId(p.id); setView('chat'); }}>
                     <h3 className="font-black text-slate-800 text-lg truncate">{p.name}</h3>
-                    <p className="text-sm text-slate-500 italic font-medium truncate">{p.breed}</p>
-                    <div className="flex gap-2 mt-2">
-                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{p.age || 'Age?'}</span>
-                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{p.weight || 'Weight?'}</span>
-                    </div>
+                    <p className="text-sm text-slate-500 italic truncate">{p.breed}</p>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <button onClick={() => deleteProfile(p.id)} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><i className="fa-solid fa-trash-can"></i></button>
-                  </div>
+                  <button onClick={() => deleteProfile(p.id)} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><i className="fa-solid fa-trash-can"></i></button>
                 </div>
               ))
             )}
@@ -375,84 +361,47 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* 2. Step Selector */}
       {view === 'add' && (
         <div className="fixed inset-0 z-[105] bg-slate-900/80 backdrop-blur-sm flex items-end justify-center animate-in">
-          <div 
-            className="bg-white w-full max-w-xl rounded-t-[40px] px-8 pt-8 pb-4 slide-in-up shadow-2xl"
-            style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
-          >
-            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6"></div>
+          <div className="bg-white w-full max-w-xl rounded-t-[40px] px-8 pt-8 pb-4 shadow-2xl" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
             <h2 className="text-2xl font-black text-slate-800 text-center mb-6">New Profile</h2>
             <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => setView('scan')} className="flex flex-col items-center gap-3 p-6 rounded-3xl border-2 border-slate-100 hover:border-orange-500 hover:bg-orange-50 transition-all">
-                <div className="w-14 h-14 bg-orange-600 rounded-2xl flex items-center justify-center text-white shadow-lg"><i className="fa-solid fa-camera text-2xl"></i></div>
-                <span className="font-bold text-slate-800">Scan & ID</span>
-                <span className="text-[10px] text-slate-400 text-center leading-tight">AI breed identification</span>
+              <button onClick={() => setView('scan')} className="flex flex-col items-center gap-3 p-6 rounded-3xl border-2 border-slate-100 hover:border-orange-500">
+                <div className="w-14 h-14 bg-orange-600 rounded-2xl flex items-center justify-center text-white"><i className="fa-solid fa-camera text-2xl"></i></div>
+                <span className="font-bold text-slate-800 text-xs">Scan & ID</span>
               </button>
-              <button onClick={() => { setFormDog({ name: '', breed: '', age: '', weight: '', photo: '' }); setView('add-form'); }} className="flex flex-col items-center gap-3 p-6 rounded-3xl border-2 border-slate-100 hover:border-orange-500 hover:bg-orange-50 transition-all">
-                <div className="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center text-white shadow-lg"><i className="fa-solid fa-keyboard text-2xl"></i></div>
-                <span className="font-bold text-slate-800">Manual Entry</span>
-                <span className="text-[10px] text-slate-400 text-center leading-tight">Start from scratch</span>
+              <button onClick={() => { setFormDog({ name: '', breed: '', age: '', weight: '', photo: '' }); setView('add-form'); }} className="flex flex-col items-center gap-3 p-6 rounded-3xl border-2 border-slate-100 hover:border-orange-500">
+                <div className="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center text-white"><i className="fa-solid fa-keyboard text-2xl"></i></div>
+                <span className="font-bold text-slate-800 text-xs">Manual Entry</span>
               </button>
             </div>
-            <button onClick={() => setView('profiles')} className="w-full py-4 text-slate-400 font-bold hover:text-slate-800 transition-colors mt-4">Cancel</button>
+            <button onClick={() => setView('profiles')} className="w-full py-4 text-slate-400 font-bold mt-4">Cancel</button>
           </div>
         </div>
       )}
 
-      {/* 3. Detail Form Overlay */}
       {view === 'add-form' && (
         <div className="fixed inset-0 z-[120] bg-white flex flex-col animate-in">
           <header className="bg-slate-50 border-b shrink-0">
-            <div style={{ paddingTop: 'max(env(safe-area-inset-top), 44px)' }}></div>
+            <div style={{ paddingTop: 'max(env(safe-area-inset-top), 80px)' }}></div>
             <div className="flex justify-between items-center px-6 py-4">
               <h2 className="text-xl font-black text-slate-800">Pet Details</h2>
-              <button onClick={() => setView('profiles')} className="p-2 text-slate-400 hover:text-slate-800"><i className="fa-solid fa-xmark text-2xl"></i></button>
+              <button onClick={() => setView('profiles')} className="p-2 text-slate-400"><i className="fa-solid fa-xmark text-2xl"></i></button>
             </div>
           </header>
-          <div className="flex-1 overflow-y-auto p-6 space-y-8">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <PhotoSelector />
             <div className="space-y-4">
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Name</label>
-                <input type="text" value={formDog.name} onChange={e => setFormDog(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Buddy" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none transition-all font-bold" />
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Breed</label>
-                <input type="text" value={formDog.breed} onChange={e => setFormDog(p => ({ ...p, breed: e.target.value }))} placeholder="e.g. Golden Retriever" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none transition-all font-bold" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Age</label>
-                  <input type="text" value={formDog.age} onChange={e => setFormDog(p => ({ ...p, age: e.target.value }))} placeholder="e.g. 3 years" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none transition-all font-bold" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Weight</label>
-                  <input type="text" value={formDog.weight} onChange={e => setFormDog(p => ({ ...p, weight: e.target.value }))} placeholder="e.g. 25kg" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none transition-all font-bold" />
-                </div>
-              </div>
+              <input type="text" value={formDog.name} onChange={e => setFormDog(p => ({ ...p, name: e.target.value }))} placeholder="Name" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none font-bold" />
+              <input type="text" value={formDog.breed} onChange={e => setFormDog(p => ({ ...p, breed: e.target.value }))} placeholder="Breed" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none font-bold" />
             </div>
-            <button onClick={handleSaveDog} className="w-full py-5 bg-orange-600 text-white rounded-3xl font-black text-lg shadow-xl shadow-orange-600/30 active:scale-95 transition-all">Save Profile</button>
-            <div style={{ height: 'env(safe-area-inset-bottom)' }}></div>
+            <button onClick={handleSaveDog} className="w-full py-5 bg-orange-600 text-white rounded-3xl font-black text-lg shadow-xl shadow-orange-600/30">Save Profile</button>
           </div>
         </div>
       )}
 
-      {/* Overlays */}
-      {view === 'scan' && (
-        <ScannerOverlay 
-            onResult={(breed, photo) => { setFormDog({ breed, photo, name: '' }); setView('add-form'); }} 
-            onClose={() => setView('add')} 
-        />
-      )}
-      {view === 'form-scan' && (
-        <ScannerOverlay 
-            onResult={(breed, photo) => { setFormDog(prev => ({ ...prev, photo, breed: breed || prev.breed })); setView('add-form'); }} 
-            onClose={() => setView('add-form')} 
-        />
-      )}
-
+      {view === 'scan' && <ScannerOverlay onResult={(breed, photo) => { setFormDog({ breed, photo, name: '' }); setView('add-form'); }} onClose={() => setView('add')} />}
+      {view === 'form-scan' && <ScannerOverlay onResult={(breed, photo) => { setFormDog(prev => ({ ...prev, photo, breed: breed || prev.breed })); setView('add-form'); }} onClose={() => setView('add-form')} />}
       {view === 'map' && <MapOverlay location={location} onClose={() => setView('chat')} />}
     </div>
   );
