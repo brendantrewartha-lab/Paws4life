@@ -8,6 +8,7 @@ export interface Message {
 }
 
 export interface DogProfile {
+  id: string;
   name: string;
   breed: string;
   age: string;
@@ -15,6 +16,7 @@ export interface DogProfile {
   allergies: string;
   conditions: string;
   homeLocation?: string;
+  photo?: string; // base64 representation of the dog's photo
 }
 
 export interface AdSpot {
