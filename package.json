@@ -1,7 +1,8 @@
+
 {
-  "name": "paws4life.ai:-canine-companion-&-expert-advisor",
+  "name": "paws4life-ai",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,14 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.35.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "@google/genai": "^1.36.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "leaflet": "^1.9.4"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/leaflet": "^1.9.12",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0"
   }
 }
