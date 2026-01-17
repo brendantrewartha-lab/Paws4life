@@ -54,21 +54,20 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
     const base64 = canvasRef.current.toDataURL('image/jpeg', 0.6).split(',')[1];
     
     try {
-      // Fix: Follow Gemini API initialization guidelines
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
       const res = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: { parts: [{ inlineData: { data: base64, mimeType: 'image/jpeg' } }, { text: "Identify the dog breed in this image. Answer with ONLY the breed name." }] }
       });
       onResult(res.text?.trim() || "Unknown Breed", `data:image/jpeg;base64,${base64}`);
     } catch (e) {
-      alert("AI Analysis Error. Check your connection.");
-      setAnalyzing(false);
+      alert("AI Analysis Error. Defaulting to manual.");
+      onResult("", `data:image/jpeg;base64,${base64}`);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[110] bg-black flex flex-col animate-in">
+    <div className="fixed inset-0 z-[200] bg-black flex flex-col animate-in">
       <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
       <div className="absolute inset-0 border-[60px] border-black/50 pointer-events-none flex items-center justify-center">
         <div className="w-64 h-64 border-2 border-white/50 rounded-3xl relative">
@@ -83,7 +82,7 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
         <button onClick={capture} disabled={analyzing} className="w-20 h-20 rounded-full border-4 border-white bg-orange-600 flex items-center justify-center shadow-2xl active:scale-95 transition-all">
           {analyzing ? <i className="fa-solid fa-spinner fa-spin text-white text-2xl"></i> : <div className="w-12 h-12 bg-white rounded-full"></div>}
         </button>
-        <p className="text-white font-bold tracking-wide drop-shadow-md">ALIGN DOG WITHIN FRAME</p>
+        <p className="text-white font-bold tracking-wide drop-shadow-md">{analyzing ? 'IDENTIFYING BREED...' : 'SNAP PHOTO'}</p>
       </div>
       <canvas ref={canvasRef} className="hidden" />
     </div>
@@ -93,25 +92,23 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
 // --- Main App ---
 
 const App: React.FC = () => {
-  const [profiles, setProfiles] = useState<DogProfile[]>(() => JSON.parse(localStorage.getItem('paws_v10_profiles') || '[]'));
-  const [activeId, setActiveId] = useState<string | null>(localStorage.getItem('paws_v10_active'));
+  const [profiles, setProfiles] = useState<DogProfile[]>(() => JSON.parse(localStorage.getItem('paws_v11_profiles') || '[]'));
+  const [activeId, setActiveId] = useState<string | null>(localStorage.getItem('paws_v11_active'));
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  // Fix: Added 'add-form' to the view union type to resolve type mismatch errors
-  const [view, setView] = useState<'chat' | 'profiles' | 'add' | 'scan' | 'map' | 'add-form'>('chat');
+  const [view, setView] = useState<'chat' | 'profiles' | 'add' | 'scan' | 'form-scan' | 'add-form' | 'map'>('chat');
   const [location, setLocation] = useState<UserLocation>();
   
   // Profile Form State
   const [formDog, setFormDog] = useState<Partial<DogProfile>>({ name: '', breed: '', age: '', weight: '', photo: '' });
   
   const scrollRef = useRef<HTMLDivElement>(null);
-
   const currentDog = profiles.find(p => p.id === activeId) || null;
 
   useEffect(() => {
-    localStorage.setItem('paws_v10_profiles', JSON.stringify(profiles));
-    if (activeId) localStorage.setItem('paws_v10_active', activeId);
+    localStorage.setItem('paws_v11_profiles', JSON.stringify(profiles));
+    if (activeId) localStorage.setItem('paws_v11_active', activeId);
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [profiles, activeId, messages]);
 
@@ -131,8 +128,7 @@ const App: React.FC = () => {
     setLoading(true);
 
     try {
-      // Fix: Follow Gemini API initialization guidelines
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
       const context = currentDog ? `User dog: ${currentDog.name}, ${currentDog.breed}, ${currentDog.age}, ${currentDog.weight}.` : "No specific dog selected.";
       const isLocRequest = input.toLowerCase().match(/near|vet|park|clinic|where/);
       
@@ -140,7 +136,7 @@ const App: React.FC = () => {
         model: (location && isLocRequest) ? 'gemini-2.5-flash' : 'gemini-3-flash-preview',
         contents: messages.concat(userMsg).map(m => ({ role: m.role, parts: [{ text: m.text }] })),
         config: {
-          systemInstruction: `You are paws4life.ai, a specialized canine health and lifestyle advisor. ${context} Be factual, warm, and prioritize dog safety.`,
+          systemInstruction: `You are paws4life.ai, a specialized canine expert. ${context} Be factual, helpful, and prioritize dog safety.`,
           tools: (isLocRequest && location) ? [{ googleSearch: {} }, { googleMaps: {} }] : [{ googleSearch: {} }],
         }
       });
@@ -151,7 +147,7 @@ const App: React.FC = () => {
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text, timestamp: Date.now(), groundingUrls: sources }]);
     } catch (err) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "⚠️ Connection Error. Ensure your API Key is valid and the app is redeployed.", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "⚠️ Connection Error. Ensure your API Key is valid.", timestamp: Date.now() }]);
     } finally {
       setLoading(false);
     }
@@ -181,6 +177,48 @@ const App: React.FC = () => {
     if (activeId === id) setActiveId(null);
   };
 
+  const PhotoSelector: React.FC = () => (
+    <div className="flex flex-col items-center gap-2">
+      <div className="w-32 h-32 rounded-[40px] bg-white border-2 border-slate-200 overflow-hidden relative shadow-md group">
+        {formDog.photo ? (
+          <img src={formDog.photo} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+            <i className="fa-solid fa-dog text-3xl mb-1"></i>
+            <span className="text-[10px] font-black">NO PHOTO</span>
+          </div>
+        )}
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+          <i className="fa-solid fa-camera text-white text-xl"></i>
+        </div>
+      </div>
+      <div className="flex gap-2 mt-1">
+        <button 
+          onClick={() => setView('form-scan')}
+          className="text-[10px] font-black uppercase bg-orange-100 text-orange-600 px-3 py-1.5 rounded-full hover:bg-orange-200 transition-colors"
+        >
+          <i className="fa-solid fa-camera mr-1"></i> Take Photo
+        </button>
+        <label className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-200 transition-colors cursor-pointer">
+          <i className="fa-solid fa-upload mr-1"></i> Upload
+          <input 
+            type="file" 
+            accept="image/*" 
+            className="hidden" 
+            onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (re) => setFormDog(p => ({ ...p, photo: re.target?.result as string }));
+                    reader.readAsDataURL(file);
+                }
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-screen max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden font-sans">
       {/* Header */}
@@ -200,7 +238,7 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Chat Interface */}
+      {/* Main Chat */}
       <main className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 scrollbar-hide">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-6">
@@ -209,11 +247,10 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-2">
               <h2 className="text-2xl font-black text-slate-800">Canine Expert AI</h2>
-              <p className="text-sm text-slate-500 leading-relaxed max-w-[260px]">Ready to assist with your {currentDog ? currentDog.name : 'dog'}'s health, training, and local needs.</p>
+              <p className="text-sm text-slate-500 leading-relaxed max-w-[260px]">Ask about health, behavior, or local services for your pack.</p>
             </div>
           </div>
         )}
-
         {messages.map((m) => (
           <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in`}>
             <div className={`max-w-[90%] p-4 rounded-3xl shadow-sm text-sm ${m.role === 'user' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'}`}>
@@ -256,7 +293,7 @@ const App: React.FC = () => {
 
       {/* --- Overlays --- */}
 
-      {/* 1. Pack / Profile List Overlay */}
+      {/* 1. Pack List */}
       {view === 'profiles' && (
         <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
           <header className="p-6 bg-orange-600 text-white flex justify-between items-center shadow-lg">
@@ -264,23 +301,28 @@ const App: React.FC = () => {
             <button onClick={() => setView('chat')} className="p-2 hover:bg-white/20 rounded-full transition-colors"><i className="fa-solid fa-xmark text-2xl"></i></button>
           </header>
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {/* ADD DOG BUTTON AT TOP */}
+            <button onClick={() => setView('add')} className="w-full py-4 rounded-3xl border-2 border-dashed border-orange-300 bg-orange-50 text-orange-600 font-black text-lg hover:bg-orange-100 transition-all flex items-center justify-center gap-2 mb-4">
+              <i className="fa-solid fa-plus"></i> Add New Dog
+            </button>
+
             {profiles.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-12 space-y-4 text-slate-400">
+              <div className="flex flex-col items-center justify-center text-center p-12 space-y-4 text-slate-300">
                 <i className="fa-solid fa-bone text-6xl opacity-20"></i>
                 <p className="font-bold">Your pack is empty!</p>
               </div>
             ) : (
               profiles.map(p => (
-                <div key={p.id} className={`group relative p-4 rounded-3xl border-2 transition-all flex items-center gap-4 ${activeId === p.id ? 'bg-orange-50 border-orange-500 shadow-md' : 'bg-white border-slate-100 hover:border-orange-200'}`}>
+                <div key={p.id} className={`p-4 rounded-3xl border-2 transition-all flex items-center gap-4 ${activeId === p.id ? 'bg-orange-50 border-orange-500 shadow-sm' : 'bg-white border-slate-100 hover:border-orange-200'}`}>
                   <div className="w-20 h-20 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-100 shadow-inner">
                     {p.photo ? <img src={p.photo} className="w-full h-full object-cover" /> : <i className="fa-solid fa-dog text-4xl text-slate-300 mt-4 ml-4"></i>}
                   </div>
                   <div className="flex-1 min-w-0" onClick={() => { setActiveId(p.id); setView('chat'); }}>
                     <h3 className="font-black text-slate-800 text-lg truncate">{p.name}</h3>
-                    <p className="text-sm text-slate-500 italic font-medium">{p.breed}</p>
+                    <p className="text-sm text-slate-500 italic font-medium truncate">{p.breed}</p>
                     <div className="flex gap-2 mt-2">
-                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">Age: {p.age || 'N/A'}</span>
-                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">Weight: {p.weight || 'N/A'}</span>
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{p.age || 'Age?'}</span>
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{p.weight || 'Weight?'}</span>
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
@@ -292,27 +334,24 @@ const App: React.FC = () => {
                 </div>
               ))
             )}
-            <button onClick={() => setView('add')} className="w-full py-4 rounded-3xl border-2 border-dashed border-orange-300 bg-orange-50 text-orange-600 font-black text-lg hover:bg-orange-100 transition-all flex items-center justify-center gap-2">
-              <i className="fa-solid fa-plus"></i> Add New Dog
-            </button>
           </div>
         </div>
       )}
 
-      {/* 2. Add Dog - Step Selection Overlay */}
+      {/* 2. Step Selector */}
       {view === 'add' && (
         <div className="fixed inset-0 z-[105] bg-slate-900/80 backdrop-blur-sm flex items-end justify-center animate-in">
-          <div className="bg-white w-full max-w-xl rounded-t-[40px] p-8 space-y-6 animate-in slide-in-from-bottom duration-300">
+          <div className="bg-white w-full max-w-xl rounded-t-[40px] p-8 space-y-6 slide-in-up">
             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-2"></div>
-            <h2 className="text-2xl font-black text-slate-800 text-center">Add New Profile</h2>
+            <h2 className="text-2xl font-black text-slate-800 text-center">New Profile</h2>
             <div className="grid grid-cols-2 gap-4">
               <button 
                 onClick={() => setView('scan')}
                 className="flex flex-col items-center gap-3 p-6 rounded-3xl border-2 border-slate-100 hover:border-orange-500 hover:bg-orange-50 transition-all"
               >
                 <div className="w-14 h-14 bg-orange-600 rounded-2xl flex items-center justify-center text-white shadow-lg"><i className="fa-solid fa-camera text-2xl"></i></div>
-                <span className="font-bold text-slate-800">Scan Dog</span>
-                <span className="text-[10px] text-slate-400 text-center">Auto-detect breed using AI</span>
+                <span className="font-bold text-slate-800">Scan & ID</span>
+                <span className="text-[10px] text-slate-400 text-center leading-tight">AI breed identification</span>
               </button>
               <button 
                 onClick={() => { setFormDog({ name: '', breed: '', age: '', weight: '', photo: '' }); setView('add-form'); }}
@@ -320,7 +359,7 @@ const App: React.FC = () => {
               >
                 <div className="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center text-white shadow-lg"><i className="fa-solid fa-keyboard text-2xl"></i></div>
                 <span className="font-bold text-slate-800">Manual Entry</span>
-                <span className="text-[10px] text-slate-400 text-center">Fill in details yourself</span>
+                <span className="text-[10px] text-slate-400 text-center leading-tight">Start from scratch</span>
               </button>
             </div>
             <button onClick={() => setView('profiles')} className="w-full py-4 text-slate-400 font-bold hover:text-slate-800 transition-colors">Cancel</button>
@@ -328,40 +367,15 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* 3. Detail Form Overlay */}
+      {/* 3. Detail Form */}
       {view === 'add-form' && (
         <div className="fixed inset-0 z-[120] bg-white flex flex-col animate-in">
           <header className="p-6 bg-slate-50 border-b flex justify-between items-center">
             <h2 className="text-xl font-black text-slate-800">Pet Details</h2>
             <button onClick={() => setView('profiles')} className="p-2 text-slate-400 hover:text-slate-800"><i className="fa-solid fa-xmark text-2xl"></i></button>
           </header>
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* Photo Preview & Selector */}
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-32 h-32 rounded-[40px] bg-slate-100 border-2 border-dashed border-slate-200 overflow-hidden relative group">
-                {formDog.photo ? (
-                  <img src={formDog.photo} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
-                    <i className="fa-solid fa-camera text-2xl mb-1"></i>
-                    <span className="text-[9px] font-bold">ADD PHOTO</span>
-                  </div>
-                )}
-                <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="absolute inset-0 opacity-0 cursor-pointer" 
-                    onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (re) => setFormDog(p => ({ ...p, photo: re.target?.result as string }));
-                            reader.readAsDataURL(file);
-                        }
-                    }}
-                />
-              </div>
-            </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-8">
+            <PhotoSelector />
 
             <div className="space-y-4">
               <div>
@@ -371,17 +385,17 @@ const App: React.FC = () => {
                   value={formDog.name} 
                   onChange={e => setFormDog(p => ({ ...p, name: e.target.value }))} 
                   placeholder="e.g. Buddy" 
-                  className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-orange-500 outline-none transition-all font-bold"
+                  className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none transition-all font-bold"
                 />
               </div>
               <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Breed (AI Suggested)</label>
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Breed</label>
                 <input 
                   type="text" 
                   value={formDog.breed} 
                   onChange={e => setFormDog(p => ({ ...p, breed: e.target.value }))} 
                   placeholder="e.g. Golden Retriever" 
-                  className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-orange-500 outline-none transition-all font-bold"
+                  className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none transition-all font-bold"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -392,7 +406,7 @@ const App: React.FC = () => {
                     value={formDog.age} 
                     onChange={e => setFormDog(p => ({ ...p, age: e.target.value }))} 
                     placeholder="e.g. 3 years" 
-                    className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-orange-500 outline-none transition-all font-bold"
+                    className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none transition-all font-bold"
                   />
                 </div>
                 <div>
@@ -402,7 +416,7 @@ const App: React.FC = () => {
                     value={formDog.weight} 
                     onChange={e => setFormDog(p => ({ ...p, weight: e.target.value }))} 
                     placeholder="e.g. 25kg" 
-                    className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-orange-500 outline-none transition-all font-bold"
+                    className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none transition-all font-bold"
                   />
                 </div>
               </div>
@@ -410,15 +424,15 @@ const App: React.FC = () => {
 
             <button 
               onClick={handleSaveDog}
-              className="w-full py-5 bg-orange-600 text-white rounded-3xl font-black text-lg shadow-xl shadow-orange-600/30 active:scale-95 transition-all mt-8"
+              className="w-full py-5 bg-orange-600 text-white rounded-3xl font-black text-lg shadow-xl shadow-orange-600/30 active:scale-95 transition-all"
             >
-              Finish & Save Profile
+              Save Profile
             </button>
           </div>
         </div>
       )}
 
-      {/* 4. Scanner Overlay Integration */}
+      {/* Overlays for Camera */}
       {view === 'scan' && (
         <ScannerOverlay 
             onResult={(breed, photo) => {
@@ -428,8 +442,18 @@ const App: React.FC = () => {
             onClose={() => setView('add')} 
         />
       )}
+      {view === 'form-scan' && (
+        <ScannerOverlay 
+            onResult={(breed, photo) => {
+                // When taking a photo from the form, we keep existing name but can update breed if returned
+                setFormDog(prev => ({ ...prev, photo, breed: breed || prev.breed }));
+                setView('add-form');
+            }} 
+            onClose={() => setView('add-form')} 
+        />
+      )}
 
-      {/* 5. Map Overlay */}
+      {/* Map Overlay */}
       {view === 'map' && <MapOverlay location={location} onClose={() => setView('chat')} />}
     </div>
   );
