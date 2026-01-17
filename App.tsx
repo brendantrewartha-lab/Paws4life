@@ -20,7 +20,10 @@ const MapOverlay: React.FC<{ location: UserLocation | undefined; onClose: () => 
 
   return (
     <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
-      <header className="p-4 bg-orange-600 text-white flex justify-between items-center shadow-lg">
+      <header 
+        className="bg-orange-600 text-white px-4 pb-4 flex justify-between items-center shadow-lg"
+        style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
+      >
         <h2 className="font-bold flex items-center gap-2"><i className="fa-solid fa-map-pin"></i> Nearby Services</h2>
         <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-full transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
       </header>
@@ -77,8 +80,17 @@ const ScannerOverlay: React.FC<{ onResult: (breed: string, photo: string) => voi
             <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-orange-500 -mr-1 -mb-1 rounded-br-lg"></div>
         </div>
       </div>
-      <button onClick={onClose} className="absolute top-6 right-6 text-white p-4 bg-black/40 rounded-full backdrop-blur-md"><i className="fa-solid fa-xmark text-xl"></i></button>
-      <div className="absolute bottom-16 w-full flex flex-col items-center gap-4">
+      <button 
+        onClick={onClose} 
+        className="absolute right-6 text-white p-4 bg-black/40 rounded-full backdrop-blur-md"
+        style={{ top: 'calc(1.5rem + env(safe-area-inset-top))' }}
+      >
+        <i className="fa-solid fa-xmark text-xl"></i>
+      </button>
+      <div 
+        className="absolute w-full flex flex-col items-center gap-4"
+        style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom))' }}
+      >
         <button onClick={capture} disabled={analyzing} className="w-20 h-20 rounded-full border-4 border-white bg-orange-600 flex items-center justify-center shadow-2xl active:scale-95 transition-all">
           {analyzing ? <i className="fa-solid fa-spinner fa-spin text-white text-2xl"></i> : <div className="w-12 h-12 bg-white rounded-full"></div>}
         </button>
@@ -221,8 +233,11 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden font-sans">
-      {/* Header */}
-      <header className="bg-orange-600 text-white p-4 flex items-center justify-between shadow-xl z-[60]">
+      {/* Header with Safe Area Top */}
+      <header 
+        className="bg-orange-600 text-white px-4 pb-4 flex items-center justify-between shadow-xl z-[60]"
+        style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
+      >
         <div className="flex items-center gap-3">
           <div className="bg-white/20 w-10 h-10 rounded-2xl flex items-center justify-center backdrop-blur-md">
             <i className="fa-solid fa-paw text-xl"></i>
@@ -271,8 +286,11 @@ const App: React.FC = () => {
         <div ref={scrollRef} />
       </main>
 
-      {/* Input Group */}
-      <footer className="p-4 bg-white border-t border-slate-100 sticky bottom-0 z-50">
+      {/* Input Group with Safe Area Bottom */}
+      <footer 
+        className="px-4 pt-4 bg-white border-t border-slate-100 sticky bottom-0 z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]"
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+      >
         <form onSubmit={sendMessage} className="flex gap-3">
           <input 
             type="text" 
@@ -296,7 +314,10 @@ const App: React.FC = () => {
       {/* 1. Pack List */}
       {view === 'profiles' && (
         <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in">
-          <header className="p-6 bg-orange-600 text-white flex justify-between items-center shadow-lg">
+          <header 
+            className="bg-orange-600 text-white px-6 pb-6 flex justify-between items-center shadow-lg"
+            style={{ paddingTop: 'calc(1.5rem + env(safe-area-inset-top))' }}
+          >
             <h2 className="text-xl font-black italic tracking-tight"><i className="fa-solid fa-dog mr-2"></i> My Pack</h2>
             <button onClick={() => setView('chat')} className="p-2 hover:bg-white/20 rounded-full transition-colors"><i className="fa-solid fa-xmark text-2xl"></i></button>
           </header>
@@ -338,12 +359,15 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* 2. Step Selector */}
+      {/* 2. Step Selector with Safe Area Bottom */}
       {view === 'add' && (
         <div className="fixed inset-0 z-[105] bg-slate-900/80 backdrop-blur-sm flex items-end justify-center animate-in">
-          <div className="bg-white w-full max-w-xl rounded-t-[40px] p-8 space-y-6 slide-in-up">
-            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-2"></div>
-            <h2 className="text-2xl font-black text-slate-800 text-center">New Profile</h2>
+          <div 
+            className="bg-white w-full max-w-xl rounded-t-[40px] px-8 pt-8 pb-4 slide-in-up"
+            style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+          >
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6"></div>
+            <h2 className="text-2xl font-black text-slate-800 text-center mb-6">New Profile</h2>
             <div className="grid grid-cols-2 gap-4">
               <button 
                 onClick={() => setView('scan')}
@@ -362,7 +386,7 @@ const App: React.FC = () => {
                 <span className="text-[10px] text-slate-400 text-center leading-tight">Start from scratch</span>
               </button>
             </div>
-            <button onClick={() => setView('profiles')} className="w-full py-4 text-slate-400 font-bold hover:text-slate-800 transition-colors">Cancel</button>
+            <button onClick={() => setView('profiles')} className="w-full py-4 text-slate-400 font-bold hover:text-slate-800 transition-colors mt-4">Cancel</button>
           </div>
         </div>
       )}
@@ -370,7 +394,10 @@ const App: React.FC = () => {
       {/* 3. Detail Form */}
       {view === 'add-form' && (
         <div className="fixed inset-0 z-[120] bg-white flex flex-col animate-in">
-          <header className="p-6 bg-slate-50 border-b flex justify-between items-center">
+          <header 
+            className="bg-slate-50 border-b flex justify-between items-center px-6 pb-6"
+            style={{ paddingTop: 'calc(1.5rem + env(safe-area-inset-top))' }}
+          >
             <h2 className="text-xl font-black text-slate-800">Pet Details</h2>
             <button onClick={() => setView('profiles')} className="p-2 text-slate-400 hover:text-slate-800"><i className="fa-solid fa-xmark text-2xl"></i></button>
           </header>
@@ -428,6 +455,8 @@ const App: React.FC = () => {
             >
               Save Profile
             </button>
+            {/* Spacing for bottom safe area in scrollable form */}
+            <div style={{ height: 'env(safe-area-inset-bottom)' }}></div>
           </div>
         </div>
       )}
@@ -445,7 +474,6 @@ const App: React.FC = () => {
       {view === 'form-scan' && (
         <ScannerOverlay 
             onResult={(breed, photo) => {
-                // When taking a photo from the form, we keep existing name but can update breed if returned
                 setFormDog(prev => ({ ...prev, photo, breed: breed || prev.breed }));
                 setView('add-form');
             }} 
