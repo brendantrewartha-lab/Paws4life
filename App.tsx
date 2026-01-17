@@ -42,7 +42,6 @@ export interface MapPlace {
   lng: number;
   type: string;
   uri?: string;
-  categoryIcon: string;
   categoryColor: string;
 }
 
@@ -96,7 +95,7 @@ const MapView: React.FC<{
   const [searchQuery, setSearchQuery] = useState('');
   const [places, setPlaces] = useState<MapPlace[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(['Vet']); // Start with Vets as default
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]); // Default empty
 
   const categories = [
     { id: 'Vet', label: 'Vets', icon: 'fa-stethoscope', color: 'orange' },
@@ -125,7 +124,7 @@ const MapView: React.FC<{
         detectRetina: true
       }).addTo(mapInstance.current);
 
-      // User location marker
+      // User location marker (Blue dot)
       L.marker([location.latitude, location.longitude], { 
         icon: L.divIcon({ 
           html: '<div class="relative w-8 h-8 flex items-center justify-center"><div class="absolute inset-0 bg-blue-500 rounded-full opacity-30 animate-ping"></div><div class="relative w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div></div>', 
@@ -136,13 +135,16 @@ const MapView: React.FC<{
 
       setMapReady(true);
       
-      // Fix potential grey screen by forcing layout re-calculation
-      setTimeout(() => mapInstance.current?.invalidateSize(), 200);
+      // Intensive grey-screen fix
+      const refreshInterval = setInterval(() => {
+        if (mapInstance.current) mapInstance.current.invalidateSize();
+      }, 500);
+      
+      setTimeout(() => clearInterval(refreshInterval), 3000);
     };
 
     initMap();
 
-    // Observe size changes to keep map healthy on mobile rotation/keyboard
     const resizeObserver = new ResizeObserver(() => {
       if (mapInstance.current) mapInstance.current.invalidateSize();
     });
@@ -163,14 +165,15 @@ const MapView: React.FC<{
   useEffect(() => {
     if (!mapInstance.current) return;
 
-    // Remove existing markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
     places.forEach(place => {
+      // Per instructions: "all icons are the same paw print vs the icons shown next to the topics of interest"
+      // So map markers are always PAW PRINTS.
       const marker = L.marker([place.lat, place.lng], {
         icon: L.divIcon({
-          html: `<div class="w-10 h-10 bg-${place.categoryColor}-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white transform hover:scale-110 transition-transform"><i class="fa-solid ${place.categoryIcon}"></i></div>`,
+          html: `<div class="w-10 h-10 bg-${place.categoryColor}-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white transform hover:scale-110 transition-transform"><i class="fa-solid fa-paw"></i></div>`,
           iconSize: [40, 40],
           className: 'place-marker'
         })
@@ -180,7 +183,7 @@ const MapView: React.FC<{
         <div class="p-3 min-w-[180px]">
           <h3 class="font-black text-slate-800 text-sm leading-tight mb-1">${place.name}</h3>
           <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">${place.type}</p>
-          ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all">Visit Website</a>` : '<div class="text-[10px] text-slate-400 italic">No website available</div>'}
+          ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all">Visit Website</a>` : '<div class="text-[10px] text-slate-400 italic">No direct link</div>'}
         </div>
       `;
 
@@ -209,9 +212,10 @@ const MapView: React.FC<{
     setSearching(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      // We explicitly ask for coordinates in the text to bypass the grounding URI extraction limits
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Find real local business services near me for: ${query}.`,
+        contents: `Find real local business services near me for: ${query}. For each result found, strictly provide its details in the text as: [Name: Name, Lat: Latitude, Lng: Longitude].`,
         config: {
           tools: [{ googleMaps: {} }],
           toolConfig: {
@@ -225,48 +229,80 @@ const MapView: React.FC<{
         },
       });
 
+      const responseText = response.text || "";
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const extractedPlaces: MapPlace[] = [];
 
-      chunks.forEach((chunk: any, idx: number) => {
-        if (chunk.maps) {
-          const uri = chunk.maps.uri || "";
-          const title = chunk.maps.title || "Pet Service";
-          
-          // CRITICAL FIX: Extract real coordinates from the Google Maps URI
-          // Format usually looks like: https://www.google.com/maps/place/.../@LAT,LNG,...
-          const coordsMatch = uri.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-          let lat = location.latitude;
-          let lng = location.longitude;
+      // Pattern 1: Look for the [Name: ..., Lat: ..., Lng: ...] format in response text
+      const coordPattern = /\[Name:\s*([^,]+),\s*Lat:\s*(-?\d+\.\d+),\s*Lng:\s*(-?\d+\.\d+)\]/gi;
+      let match;
+      while ((match = coordPattern.exec(responseText)) !== null) {
+        const name = match[1].trim();
+        const lat = parseFloat(match[2]);
+        const lng = parseFloat(match[3]);
 
-          if (coordsMatch) {
-            lat = parseFloat(coordsMatch[1]);
-            lng = parseFloat(coordsMatch[2]);
-          } else {
-            // Fallback: Extremely tight jitter if coords aren't available, to prevent the "large circle" bug
-            lat += (Math.random() - 0.5) * 0.005;
-            lng += (Math.random() - 0.5) * 0.005;
+        // Find matching chunk to get the URI
+        const matchingChunk = chunks.find((c: any) => c.maps && c.maps.title?.toLowerCase().includes(name.toLowerCase()));
+        const matchedCat = categories.find(c => 
+          name.toLowerCase().includes(c.id.toLowerCase()) || 
+          query.toLowerCase().includes(c.id.toLowerCase())
+        ) || categories[0];
+
+        extractedPlaces.push({
+          id: `txt-${name}-${Date.now()}`,
+          name: name,
+          lat,
+          lng,
+          type: matchedCat.label,
+          uri: matchingChunk?.maps?.uri,
+          categoryColor: matchedCat.color
+        });
+      }
+
+      // Pattern 2: Fallback to URI extraction if text parsing didn't find everything or found nothing
+      if (extractedPlaces.length < 3) {
+        chunks.forEach((chunk: any, idx: number) => {
+          if (chunk.maps) {
+            const uri = chunk.maps.uri || "";
+            const title = chunk.maps.title || "Pet Service";
+            
+            // Check if we already have this place from text parsing
+            if (extractedPlaces.some(p => p.name === title)) return;
+
+            // Better regex for both @lat,lng and !3d!4d formats
+            const atMatch = uri.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+            const dMatch = uri.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+            
+            let lat = 0;
+            let lng = 0;
+
+            if (atMatch) {
+              lat = parseFloat(atMatch[1]);
+              lng = parseFloat(atMatch[2]);
+            } else if (dMatch) {
+              lat = parseFloat(dMatch[1]);
+              lng = parseFloat(dMatch[2]);
+            }
+
+            if (lat !== 0 && lng !== 0) {
+              const matchedCat = categories.find(c => 
+                title.toLowerCase().includes(c.id.toLowerCase()) || 
+                query.toLowerCase().includes(c.id.toLowerCase())
+              ) || categories[0];
+
+              extractedPlaces.push({
+                id: `uri-${idx}-${Date.now()}`,
+                name: title,
+                lat,
+                lng,
+                type: matchedCat.label,
+                uri,
+                categoryColor: matchedCat.color
+              });
+            }
           }
-
-          // Match category icon accurately
-          const matchedCat = categories.find(c => 
-            title.toLowerCase().includes(c.id.toLowerCase()) || 
-            title.toLowerCase().includes(c.label.toLowerCase().split(' ')[0]) ||
-            query.toLowerCase().includes(c.id.toLowerCase())
-          ) || categories[0];
-
-          extractedPlaces.push({
-            id: `place-${idx}-${Date.now()}`,
-            name: title,
-            lat,
-            lng,
-            type: matchedCat.label,
-            uri: chunk.maps.uri,
-            categoryIcon: matchedCat.icon,
-            categoryColor: matchedCat.color
-          });
-        }
-      });
+        });
+      }
 
       setPlaces(extractedPlaces);
     } catch (err) {
@@ -294,7 +330,7 @@ const MapView: React.FC<{
   const recentre = () => {
     if (mapInstance.current && location) {
       mapInstance.current.setView([location.latitude, location.longitude], 15);
-      setTimeout(() => mapInstance.current?.invalidateSize(), 50);
+      setTimeout(() => mapInstance.current?.invalidateSize(), 100);
     }
   };
 
@@ -333,7 +369,7 @@ const MapView: React.FC<{
             <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
               <i className="fa-solid fa-location-dot text-3xl"></i>
             </div>
-            <h3 className="text-xl font-black text-slate-800">Waiting for GPS</h3>
+            <h3 className="text-xl font-black text-slate-800">GPS Required</h3>
             <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black">Enable Location</button>
           </div>
         ) : (
@@ -363,13 +399,13 @@ const MapView: React.FC<{
               {!mapReady && (
                 <div className="absolute inset-0 z-[160] bg-slate-50 flex flex-col items-center justify-center gap-4">
                   <i className="fa-solid fa-paw text-4xl text-orange-200 animate-spin"></i>
-                  <span className="text-[10px] font-black uppercase text-slate-400">Loading Map View...</span>
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-tighter">Syncing Map...</span>
                 </div>
               )}
               <div ref={mapRef} id="map" className="w-full h-full z-10 bg-slate-200"></div>
               <button 
                 onClick={recentre} 
-                className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all hover:bg-orange-50"
+                className="absolute bottom-10 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all hover:bg-orange-50"
               >
                 <i className="fa-solid fa-location-crosshairs text-xl"></i>
               </button>
@@ -443,7 +479,7 @@ const App: React.FC = () => {
         },
       });
 
-      const text = response.text || "Connection failed. Please check your signal.";
+      const text = response.text || "Service unavailable. Please retry.";
       const sources: Array<{ title: string; uri: string }> = [];
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       if (chunks) chunks.forEach((chunk: any) => { if (chunk.web) sources.push({ title: chunk.web.title, uri: chunk.web.uri }); });
@@ -452,7 +488,7 @@ const App: React.FC = () => {
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text, timestamp: Date.now(), isVerified, groundingUrls: sources }]);
     } catch (err) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Service temporarily down.", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Error connecting to advisor.", timestamp: Date.now() }]);
     } finally {
       setLoading(false);
     }
@@ -505,7 +541,7 @@ const App: React.FC = () => {
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
             <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 mb-4"><i className="fa-solid fa-shield-dog text-2xl"></i></div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] leading-relaxed">Trusted Pet Support.<br/>Expert advice on tap.</p>
+            <p className="text-xs font-black uppercase tracking-[0.2em] leading-relaxed">Safety First.<br/>Expert advice is live.</p>
           </div>
         )}
         {messages.map(m => (
@@ -513,7 +549,7 @@ const App: React.FC = () => {
             <div className={`max-w-[88%] p-4 rounded-[2rem] text-sm shadow-sm ${m.role === 'user' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-white border text-slate-800 rounded-tl-none'}`}>
               {m.role === 'model' && m.isVerified && (
                 <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-blue-500 mb-2 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 w-fit tracking-wider">
-                  <i className="fa-solid fa-circle-check"></i> Expert Grounded Source
+                  <i className="fa-solid fa-circle-check"></i> Clinical Reference
                 </div>
               )}
               <div className="whitespace-pre-wrap leading-relaxed prose prose-sm">{m.text}</div>
@@ -545,7 +581,7 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black italic">My Pack</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            <button onClick={() => { setFormDog({ vaccinations: [], procedures: [], reminders: [] }); setView('edit-form'); }} className="w-full py-5 border-2 border-dashed border-orange-200 bg-orange-50 text-orange-600 font-black rounded-[2rem] active:bg-orange-100 transition-all shadow-sm">Add New Member</button>
+            <button onClick={() => { setFormDog({ vaccinations: [], procedures: [], reminders: [] }); setView('edit-form'); }} className="w-full py-5 border-2 border-dashed border-orange-200 bg-orange-50 text-orange-600 font-black rounded-[2rem] active:bg-orange-100 transition-all shadow-sm">Add Member</button>
             {profiles.map(p => (
               <div key={p.id} onClick={() => { setViewId(p.id); setView('profile-detail'); }} className="p-4 rounded-[2rem] border-2 flex items-center gap-4 bg-white border-slate-100 active:bg-slate-50 shadow-sm transition-all cursor-pointer">
                 <div className="w-14 h-14 rounded-2xl overflow-hidden border bg-slate-100 flex items-center justify-center shadow-inner">
@@ -563,7 +599,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3 shadow-md">
             <button onClick={() => setView('profiles')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Pet Profile</h1>
+            <h1 className="text-xl font-black italic">Pet Details</h1>
           </header>
           <form onSubmit={saveDog} className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50">
             <input required value={formDog?.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none focus:border-orange-500 transition-all shadow-sm" placeholder="Name *" />
@@ -589,7 +625,7 @@ const App: React.FC = () => {
                 <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">{viewDog.breed || 'Companion'}</p>
               </div>
             </div>
-            <button onClick={() => { if(confirm("Remove profile?")) { setProfiles(profiles.filter(p => p.id !== viewDog.id)); setView('profiles'); } }} className="text-red-400 font-black uppercase text-[10px] tracking-[0.2em] bg-red-50 px-4 py-2 rounded-lg border border-red-100 active:scale-95 transition-all">Delete From Pack</button>
+            <button onClick={() => { if(confirm("Remove profile?")) { setProfiles(profiles.filter(p => p.id !== viewDog.id)); setView('profiles'); } }} className="text-red-400 font-black uppercase text-[10px] tracking-[0.2em] bg-red-50 px-4 py-2 rounded-lg border border-red-100 active:scale-95 transition-all">Delete Profile</button>
           </div>
         </div>
       )}
@@ -598,12 +634,12 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[120] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3 shadow-md">
             <button onClick={() => setView('chat')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Owner Dashboard</h1>
+            <h1 className="text-xl font-black italic">Settings</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
             <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Owner Name" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
             <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email Address" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
-            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.7.5 • Location Accurate Mapping</p>
+            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.8.0 • Accurate Satellite GPS</p>
           </div>
         </div>
       )}
@@ -612,7 +648,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[130] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3 shadow-md">
             <button onClick={() => setView('chat')} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h1 className="text-xl font-black italic">Health Alerts</h1>
+            <h1 className="text-xl font-black italic">Reminders</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
             {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic py-12">No current notifications</p> : 
