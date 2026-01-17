@@ -2,7 +2,7 @@
   "name": "paws4life.ai",
   "short_name": "paws4life",
   "description": "Canine Companion & Expert Advisor",
-  "start_url": "/",
+  "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#ea580c",
   "theme_color": "#ea580c",
