@@ -1,9 +1,43 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Message, AdSpot, UserLocation, DogProfile } from './types';
-import { generateDogAdvice } from './services/geminiService';
-import { AdBanner } from './components/AdBanner';
-import { MapView } from './components/MapView';
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+
+// --- Types ---
+interface Message {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: number;
+  groundingUrls?: Array<{ title: string; uri: string }>;
+}
+
+interface DogProfile {
+  name: string;
+  breed: string;
+  age: string;
+  weight: string;
+  allergies: string;
+  conditions: string;
+  homeLocation?: string;
+}
+
+interface AdSpot {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  link: string;
+  type: 'vet' | 'food' | 'breeder' | 'accessory';
+  targetBreeds?: string[];
+  targetConditions?: string[];
+}
+
+interface UserLocation {
+  latitude: number;
+  longitude: number;
+}
+
+// --- Constants & Mock Data ---
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
 
 const MOCK_ADS: AdSpot[] = [
   {
@@ -44,42 +78,99 @@ const COMMON_BREEDS = [
   "Boston Terrier", "Havanese", "Bernese Mountain Dog", "Mastiff", "Chihuahua"
 ];
 
+// --- Sub-Components ---
+const AdBanner: React.FC<{ ad: AdSpot }> = ({ ad }) => (
+  <a 
+    href={ad.link} 
+    target="_blank" 
+    rel="noopener noreferrer"
+    className="block bg-white border border-orange-100 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+  >
+    <div className="flex flex-col sm:flex-row">
+      <div className="sm:w-32 h-24 bg-gray-200">
+        <img src={ad.imageUrl} alt={ad.title} className="w-full h-full object-cover" />
+      </div>
+      <div className="p-4 flex-1">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-orange-500 bg-orange-50 px-2 py-0.5 rounded">Sponsored</span>
+          <span className="text-xs text-gray-400 capitalize">{ad.type}</span>
+        </div>
+        <h4 className="font-bold text-gray-800 text-sm">{ad.title}</h4>
+        <p className="text-xs text-gray-600 line-clamp-1">{ad.description}</p>
+      </div>
+    </div>
+  </a>
+);
+
+declare const L: any;
+const MapView: React.FC<{ location?: UserLocation; onClose: () => void }> = ({ location, onClose }) => {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<any>(null);
+
+  useEffect(() => {
+    if (!mapRef.current || !location) return;
+    mapInstance.current = L.map(mapRef.current).setView([location.latitude, location.longitude], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(mapInstance.current);
+
+    const dogIcon = L.divIcon({ html: '<div class="bg-orange-600 text-white w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg"><i class="fa-solid fa-paw"></i></div>', className: '', iconSize: [32, 32], iconAnchor: [16, 32] });
+    const vetIcon = L.divIcon({ html: '<div class="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg"><i class="fa-solid fa-hospital"></i></div>', className: '', iconSize: [32, 32], iconAnchor: [16, 32] });
+    const userIcon = L.divIcon({ html: '<div class="bg-green-500 w-4 h-4 rounded-full border-2 border-white shadow-lg ring-4 ring-green-500/30"></div>', className: '', iconSize: [16, 16], iconAnchor: [8, 8] });
+
+    L.marker([location.latitude, location.longitude], { icon: userIcon }).addTo(mapInstance.current).bindPopup('<b>You are here</b>');
+
+    const places = [
+      { name: 'Happy Paws Dog Park', type: 'park', offset: [0.005, 0.008], rating: '4.8 ⭐' },
+      { name: 'Central Vet Hospital', type: 'vet', offset: [0.01, -0.005], rating: '4.9 ⭐', hours: 'Open 24/7' },
+    ];
+
+    places.forEach(place => {
+      const lat = location.latitude + place.offset[0];
+      const lng = location.longitude + place.offset[1];
+      const icon = place.type === 'park' ? dogIcon : vetIcon;
+      L.marker([lat, lng], { icon }).addTo(mapInstance.current).bindPopup(`<div class="p-1"><h4 class="font-bold text-gray-800">${place.name}</h4><p class="text-xs text-gray-500 mb-1 capitalize">${place.type}</p><div class="flex items-center gap-2 mt-2"><span class="text-xs font-bold bg-orange-50 text-orange-600 px-2 py-0.5 rounded">${place.rating}</span></div></div>`);
+    });
+
+    return () => { if (mapInstance.current) mapInstance.current.remove(); };
+  }, [location]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-white animate-in slide-in-from-bottom duration-300">
+      <header className="bg-orange-600 text-white p-4 flex items-center justify-between">
+        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20"><i className="fa-solid fa-chevron-left"></i></button>
+        <h2 className="font-bold text-lg">Local Pet Services</h2>
+        <div className="w-8"></div>
+      </header>
+      <div className="flex-1 relative">
+        <div id="map" ref={mapRef} className="h-full w-full"></div>
+      </div>
+    </div>
+  );
+};
+
+// --- Main App ---
 const App: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'init',
-      role: 'model',
-      text: "Hello! I'm paws4life.ai, your expert canine companion. Whether you have a medical question, need local park recommendations, or breed-specific tips, I'm here to help. How can I assist you and your furry friend today?",
-      timestamp: Date.now()
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([{
+    id: 'init',
+    role: 'model',
+    text: "Hello! I'm paws4life.ai, your expert canine companion. How can I assist you and your furry friend today?",
+    timestamp: Date.now()
+  }]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [location, setLocation] = useState<UserLocation | undefined>();
-  const [activeTab, setActiveTab] = useState<'chat' | 'local' | 'resources'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'local'>('chat');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   
-  const [ageError, setAgeError] = useState('');
-  const [weightError, setWeightError] = useState('');
-
   const [dogProfile, setDogProfile] = useState<DogProfile>(() => {
     const saved = localStorage.getItem('paws4life_profile');
-    return saved ? JSON.parse(saved) : {
-      name: '',
-      breed: '',
-      age: '',
-      weight: '',
-      allergies: '',
-      conditions: '',
-      homeLocation: ''
-    };
+    return saved ? JSON.parse(saved) : { name: '', breed: '', age: '', weight: '', allergies: '', conditions: '', homeLocation: '' };
   });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
@@ -95,78 +186,55 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const validateAge = (val: string) => {
-    const ageRegex = /^\d+(\s*(yr|yrs|year|years|mo|mos|month|months))?$/i;
-    if (val && !ageRegex.test(val)) {
-      setAgeError('Use format: "5 years" or "6 mo"');
-    } else {
-      setAgeError('');
-    }
-  };
-
-  const validateWeight = (val: string) => {
-    const weightRegex = /^\d+(\s*(kg|lbs|lb))?$/i;
-    if (val && !weightRegex.test(val)) {
-      setWeightError('Use format: "30kg" or "15 lbs"');
-    } else {
-      setWeightError('');
-    }
-  };
-
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputText.trim() || isLoading) return;
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: inputText,
-      timestamp: Date.now()
-    };
-
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', text: inputText, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsLoading(true);
 
-    const { text, sources } = await generateDogAdvice(inputText, messages, location, dogProfile);
+    try {
+      const contents = messages.map(msg => ({ role: msg.role === 'model' ? 'model' : 'user', parts: [{ text: msg.text }] }));
+      contents.push({ role: 'user', parts: [{ text: inputText }] });
 
-    const modelMsg: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'model',
-      text: text,
-      timestamp: Date.now(),
-      groundingUrls: sources
-    };
+      const systemInstruction = `You are "paws4life.ai", a veterinary assistant. User's dog: ${dogProfile.name || 'Unknown'}, ${dogProfile.breed || 'Unknown'}. Prioritize safety.`;
+      const tools: any[] = [{ googleSearch: {} }];
+      const modelName = location ? 'gemini-2.5-flash' : 'gemini-3-flash-preview';
+      if (location) tools.push({ googleMaps: {} });
 
-    setMessages(prev => [...prev, modelMsg]);
-    setIsLoading(false);
-  };
-
-  const handleUseCurrentLocation = () => {
-    if (location) {
-      setDogProfile({
-        ...dogProfile, 
-        homeLocation: `Near ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
+      const response: GenerateContentResponse = await ai.models.generateContent({
+        model: modelName,
+        contents: contents,
+        config: {
+          systemInstruction,
+          tools: tools,
+          toolConfig: location ? { retrievalConfig: { latLng: { latitude: location.latitude, longitude: location.longitude } } } : undefined
+        }
       });
-    } else {
-      alert("Location data is not available. Please ensure GPS is enabled.");
+
+      const text = response.text || "I'm sorry, I couldn't process that.";
+      const sources: any[] = [];
+      response.candidates?.[0]?.groundingMetadata?.groundingChunks?.forEach((chunk: any) => {
+        if (chunk.web) sources.push({ title: chunk.web.title, uri: chunk.web.uri });
+        else if (chunk.maps) sources.push({ title: chunk.maps.title, uri: chunk.maps.uri });
+      });
+
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text, timestamp: Date.now(), groundingUrls: sources }]);
+    } catch (err) {
+      console.error(err);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Error connecting to AI. Check your API key.", timestamp: Date.now() }]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const targetedAds = [...MOCK_ADS].sort((a, b) => {
-    let scoreA = 0;
-    let scoreB = 0;
+    let scoreA = 0, scoreB = 0;
     if (dogProfile.breed) {
-      if (a.targetBreeds?.some(b => dogProfile.breed.toLowerCase().includes(b.toLowerCase()))) scoreA += 2;
+      if (a.targetBreeds?.some(br => dogProfile.breed.toLowerCase().includes(br.toLowerCase()))) scoreA += 2;
       if (b.targetBreeds?.some(br => dogProfile.breed.toLowerCase().includes(br.toLowerCase()))) scoreB += 2;
-    }
-    if (dogProfile.conditions) {
-      if (a.targetConditions?.some(c => dogProfile.conditions.toLowerCase().includes(c.toLowerCase()))) scoreA += 3;
-      if (b.targetConditions?.some(c => dogProfile.conditions.toLowerCase().includes(c.toLowerCase()))) scoreB += 3;
     }
     return scoreB - scoreA;
   });
@@ -181,315 +249,83 @@ const App: React.FC = () => {
             <p className="text-[10px] opacity-80 uppercase tracking-widest font-semibold">Expert Dog Care Hub</p>
           </div>
         </div>
-        <div className="flex gap-4">
-           <button 
-             onClick={() => setIsProfileOpen(true)}
-             className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${dogProfile.name ? 'bg-orange-500 ring-2 ring-white/50' : 'bg-orange-700 hover:bg-orange-800'}`}
-             title="Dog Profile"
-           >
-             <i className="fa-solid fa-dog"></i>
-           </button>
-        </div>
+        <button onClick={() => setIsProfileOpen(true)} className="w-10 h-10 rounded-full bg-orange-700 flex items-center justify-center hover:bg-orange-800 transition-colors">
+          <i className="fa-solid fa-dog"></i>
+        </button>
       </header>
 
-      {isMapOpen && (
-        <MapView location={location} onClose={() => setIsMapOpen(false)} />
-      )}
+      {isMapOpen && <MapView location={location} onClose={() => setIsMapOpen(false)} />}
 
       {isProfileOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="bg-orange-600 p-4 text-white flex justify-between items-center">
-              <h2 className="font-bold flex items-center gap-2">
-                <i className="fa-solid fa-id-card"></i>
-                Pup Profile
-              </h2>
-              <button onClick={() => setIsProfileOpen(false)} className="hover:rotate-90 transition-transform">
-                <i className="fa-solid fa-xmark text-xl"></i>
-              </button>
+              <h2 className="font-bold flex items-center gap-2"><i className="fa-solid fa-id-card"></i> Pup Profile</h2>
+              <button onClick={() => setIsProfileOpen(false)}><i className="fa-solid fa-xmark text-xl"></i></button>
             </div>
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase">Dog's Name</label>
-                <input 
-                  type="text" 
-                  value={dogProfile.name}
-                  onChange={e => setDogProfile({...dogProfile, name: e.target.value})}
-                  className="w-full border-b border-gray-300 focus:border-orange-500 focus:outline-none py-1 text-sm"
-                  placeholder="e.g. Buddy"
-                />
-              </div>
+              <input type="text" placeholder="Dog Name" value={dogProfile.name} onChange={e => setDogProfile({...dogProfile, name: e.target.value})} className="w-full border-b py-2 focus:outline-none focus:border-orange-500" />
+              <input type="text" list="breeds" placeholder="Breed" value={dogProfile.breed} onChange={e => setDogProfile({...dogProfile, breed: e.target.value})} className="w-full border-b py-2 focus:outline-none focus:border-orange-500" />
+              <datalist id="breeds">{COMMON_BREEDS.map(b => <option key={b} value={b} />)}</datalist>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Breed</label>
-                  <input 
-                    type="text" 
-                    list="breed-list"
-                    value={dogProfile.breed}
-                    onChange={e => setDogProfile({...dogProfile, breed: e.target.value})}
-                    className="w-full border-b border-gray-300 focus:border-orange-500 focus:outline-none py-1 text-sm"
-                    placeholder="e.g. Golden Retriever"
-                  />
-                  <datalist id="breed-list">
-                    {COMMON_BREEDS.map(breed => <option key={breed} value={breed} />)}
-                  </datalist>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Age</label>
-                  <input 
-                    type="text" 
-                    value={dogProfile.age}
-                    onChange={e => {
-                      setDogProfile({...dogProfile, age: e.target.value});
-                      validateAge(e.target.value);
-                    }}
-                    className={`w-full border-b ${ageError ? 'border-red-500' : 'border-gray-300'} focus:border-orange-500 focus:outline-none py-1 text-sm`}
-                    placeholder="e.g. 5 years"
-                  />
-                  {ageError && <p className="text-[10px] text-red-500 mt-1">{ageError}</p>}
-                </div>
+                <input type="text" placeholder="Age" value={dogProfile.age} onChange={e => setDogProfile({...dogProfile, age: e.target.value})} className="w-full border-b py-2 focus:outline-none focus:border-orange-500" />
+                <input type="text" placeholder="Weight" value={dogProfile.weight} onChange={e => setDogProfile({...dogProfile, weight: e.target.value})} className="w-full border-b py-2 focus:outline-none focus:border-orange-500" />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Weight</label>
-                  <input 
-                    type="text" 
-                    value={dogProfile.weight}
-                    onChange={e => {
-                      setDogProfile({...dogProfile, weight: e.target.value});
-                      validateWeight(e.target.value);
-                    }}
-                    className={`w-full border-b ${weightError ? 'border-red-500' : 'border-gray-300'} focus:border-orange-500 focus:outline-none py-1 text-sm`}
-                    placeholder="e.g. 30kg"
-                  />
-                  {weightError && <p className="text-[10px] text-red-500 mt-1">{weightError}</p>}
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase flex items-center justify-between">
-                    Home Location
-                    <button 
-                      onClick={handleUseCurrentLocation}
-                      className="text-[10px] text-orange-600 hover:text-orange-700 font-bold"
-                    >
-                      📍 Use Current
-                    </button>
-                  </label>
-                  <input 
-                    type="text" 
-                    value={dogProfile.homeLocation}
-                    onChange={e => setDogProfile({...dogProfile, homeLocation: e.target.value})}
-                    className="w-full border-b border-gray-300 focus:border-orange-500 focus:outline-none py-1 text-sm"
-                    placeholder="e.g. Downtown SF"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase">Known Allergies</label>
-                <textarea 
-                  value={dogProfile.allergies}
-                  onChange={e => setDogProfile({...dogProfile, allergies: e.target.value})}
-                  className="w-full border border-gray-200 rounded-lg p-2 focus:ring-1 focus:ring-orange-500 focus:outline-none text-sm mt-1"
-                  rows={2}
-                  placeholder="e.g. Chicken, Beef, Pollen..."
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase">Medical Conditions</label>
-                <textarea 
-                  value={dogProfile.conditions}
-                  onChange={e => setDogProfile({...dogProfile, conditions: e.target.value})}
-                  className="w-full border border-gray-200 rounded-lg p-2 focus:ring-1 focus:ring-orange-500 focus:outline-none text-sm mt-1"
-                  rows={2}
-                  placeholder="e.g. Hip Dysplasia, Diabetes..."
-                />
-              </div>
-            </div>
-            <div className="p-4 bg-gray-50 border-t flex gap-2">
-              <button 
-                onClick={() => {
-                  if (!ageError && !weightError) setIsProfileOpen(false);
-                }}
-                className="flex-1 bg-orange-600 text-white font-bold py-2 rounded-xl hover:bg-orange-700 transition-colors disabled:bg-gray-400"
-                disabled={!!ageError || !!weightError}
-              >
-                Save Pup Info
-              </button>
+              <textarea placeholder="Allergies" value={dogProfile.allergies} onChange={e => setDogProfile({...dogProfile, allergies: e.target.value})} className="w-full border rounded p-2 focus:outline-none focus:border-orange-500" rows={2} />
+              <button onClick={() => setIsProfileOpen(false)} className="w-full bg-orange-600 text-white font-bold py-3 rounded-xl hover:bg-orange-700">Save Profile</button>
             </div>
           </div>
         </div>
       )}
 
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+      <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         <section className={`flex-1 flex flex-col ${activeTab !== 'chat' ? 'hidden md:flex' : 'flex'}`}>
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
-            {messages.map((msg) => (
+            {messages.map(msg => (
               <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl p-4 ${
-                  msg.role === 'user' 
-                    ? 'bg-orange-500 text-white rounded-tr-none shadow-lg' 
-                    : 'bg-gray-100 text-gray-800 rounded-tl-none border border-gray-200 shadow-sm'
-                }`}>
-                  <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:mb-2 whitespace-pre-wrap text-sm">
-                    {msg.text}
-                  </div>
-                  
+                <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${msg.role === 'user' ? 'bg-orange-500 text-white rounded-tr-none' : 'bg-gray-100 text-gray-800 rounded-tl-none border'}`}>
+                  <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
                   {msg.groundingUrls && msg.groundingUrls.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-300 border-opacity-30">
-                      <p className="text-[10px] font-bold uppercase mb-2">Verified Sources:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {msg.groundingUrls.slice(0, 3).map((source, idx) => (
-                          <a 
-                            key={idx} 
-                            href={source.uri} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-[10px] bg-white/50 px-2 py-1 rounded border border-gray-400/30 hover:bg-white transition-colors flex items-center gap-1"
-                          >
-                            <i className="fa-solid fa-link text-[8px]"></i>
-                            {source.title.length > 25 ? source.title.substring(0, 25) + '...' : source.title}
-                          </a>
-                        ))}
-                      </div>
+                    <div className="mt-2 flex flex-wrap gap-2 pt-2 border-t border-gray-300">
+                      {msg.groundingUrls.map((s, i) => (
+                        <a key={i} href={s.uri} target="_blank" rel="noopener" className="text-[10px] bg-white/50 px-2 py-1 rounded border hover:bg-white flex items-center gap-1">
+                          <i className="fa-solid fa-link"></i> {s.title.substring(0, 20)}...
+                        </a>
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
             ))}
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 rounded-2xl p-4 animate-pulse flex items-center gap-2">
-                  <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce delay-100"></div>
-                  <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce delay-200"></div>
-                </div>
-              </div>
-            )}
+            {isLoading && <div className="flex gap-2 p-4 bg-gray-100 rounded-2xl w-24 animate-pulse"><div className="w-2 h-2 bg-orange-400 rounded-full"></div><div className="w-2 h-2 bg-orange-400 rounded-full"></div></div>}
             <div ref={chatEndRef} />
           </div>
-
-          <div className="p-4 border-t bg-gray-50">
-            <form onSubmit={handleSendMessage} className="flex gap-2 bg-white rounded-full border border-gray-300 p-1 pl-4 items-center shadow-sm focus-within:ring-2 focus-within:ring-orange-200">
-              <input 
-                type="text" 
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder={dogProfile.name ? `Ask about ${dogProfile.name}...` : "Ask about diet, health, or local vets..."}
-                className="flex-1 border-none focus:outline-none text-sm p-2"
-              />
-              <button 
-                type="submit"
-                disabled={isLoading}
-                className="bg-orange-600 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-orange-700 transition-colors disabled:bg-gray-400"
-              >
-                <i className="fa-solid fa-paper-plane"></i>
-              </button>
-            </form>
-          </div>
+          <form onSubmit={handleSendMessage} className="p-4 border-t bg-gray-50 flex gap-2">
+            <input type="text" value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Ask about diet, health, or local vets..." className="flex-1 rounded-full border px-4 py-2 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+            <button type="submit" disabled={isLoading} className="bg-orange-600 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-orange-700 disabled:bg-gray-400"><i className="fa-solid fa-paper-plane"></i></button>
+          </form>
         </section>
 
-        <aside className={`w-full md:w-80 bg-gray-50 border-l border-gray-200 flex flex-col ${activeTab === 'chat' ? 'hidden md:flex' : 'flex'}`}>
-          <div className="p-4 overflow-y-auto space-y-6">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Tailored For You</h3>
-                {dogProfile.name && (
-                  <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-bold">
-                    {dogProfile.name}'s Picks
-                  </span>
-                )}
-              </div>
-              <div className="space-y-4">
-                {targetedAds.map(ad => (
-                  <AdBanner key={ad.id} ad={ad} />
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
-              <h3 className="font-bold text-orange-800 text-sm mb-2 flex items-center gap-2">
-                <i className="fa-solid fa-location-dot"></i>
-                Local Services
-              </h3>
-              <p className="text-xs text-orange-700 mb-3 leading-relaxed">
-                {location 
-                  ? "We've found local clinics and parks in your current vicinity." 
-                  : "Enable location to see nearby services."}
-              </p>
-              <button 
-                onClick={() => setIsMapOpen(true)}
-                className="w-full bg-white text-orange-600 text-xs font-bold py-2.5 rounded-xl border border-orange-200 hover:bg-orange-100 transition-colors shadow-sm flex items-center justify-center gap-2"
-              >
-                <i className="fa-solid fa-map"></i>
-                View Full Map
-              </button>
-            </div>
-
-            {dogProfile.name && (
-              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                <h3 className="font-bold text-gray-800 text-sm mb-3 flex items-center gap-2">
-                  <i className="fa-solid fa-id-card-clip text-orange-500"></i>
-                  Pup Info
-                </h3>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between border-b border-gray-100 pb-1">
-                    <span className="text-gray-500">Name</span>
-                    <span className="font-semibold">{dogProfile.name}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-gray-100 pb-1">
-                    <span className="text-gray-500">Home</span>
-                    <span className="font-semibold text-right truncate max-w-[120px]">{dogProfile.homeLocation || '—'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-gray-100 pb-1">
-                    <span className="text-gray-500">Breed</span>
-                    <span className="font-semibold">{dogProfile.breed || '—'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-gray-100 pb-1">
-                    <span className="text-gray-500">Age / Weight</span>
-                    <span className="font-semibold">{dogProfile.age || '—'} / {dogProfile.weight || '—'}</span>
-                  </div>
-                  {dogProfile.allergies && (
-                    <div className="pt-1">
-                      <span className="text-gray-500 block mb-0.5">Allergies</span>
-                      <span className="text-red-600 font-medium italic leading-snug">{dogProfile.allergies}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+        <aside className={`w-full md:w-80 bg-gray-50 border-l p-4 space-y-6 overflow-y-auto ${activeTab === 'chat' ? 'hidden md:block' : 'block'}`}>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Recommended</h3>
+          <div className="space-y-4">{targetedAds.map(ad => <AdBanner key={ad.id} ad={ad} />)}</div>
+          <div className="bg-orange-100 p-4 rounded-xl border border-orange-200">
+            <h3 className="font-bold text-orange-800 text-sm mb-2"><i className="fa-solid fa-location-dot"></i> Local Finder</h3>
+            <button onClick={() => setIsMapOpen(true)} className="w-full bg-white text-orange-600 text-xs font-bold py-2 rounded-lg border border-orange-200 hover:bg-orange-50">Open Map</button>
           </div>
-          
-          <div className="mt-auto p-4 bg-gradient-to-br from-orange-600 to-red-600 text-white">
-            <p className="text-sm font-bold mb-1">Go paws4life.ai Premium</p>
-            <p className="text-[10px] opacity-90 mb-3">Priority vet responses & personalized health tracking.</p>
-            <button className="w-full bg-white text-orange-600 text-xs font-bold py-2 rounded shadow-md hover:bg-orange-50 transition-colors">
-              Upgrade $9.99/mo
-            </button>
-          </div>
+          {dogProfile.name && (
+            <div className="bg-white p-4 rounded-xl border shadow-sm text-xs space-y-2">
+              <h4 className="font-bold border-b pb-1 text-gray-500 uppercase tracking-tight">{dogProfile.name}'s Stats</h4>
+              <p><b>Breed:</b> {dogProfile.breed || 'N/A'}</p>
+              <p><b>Age/Wt:</b> {dogProfile.age || '?'}/{dogProfile.weight || '?'}</p>
+            </div>
+          )}
         </aside>
       </main>
 
-      <nav className="flex md:hidden border-t border-gray-200 bg-white shadow-lg">
-        <button 
-          onClick={() => setActiveTab('chat')}
-          className={`flex-1 py-3 flex flex-col items-center gap-1 ${activeTab === 'chat' ? 'text-orange-600 border-t-2 border-orange-600' : 'text-gray-400'}`}
-        >
-          <i className="fa-solid fa-message"></i>
-          <span className="text-[10px] font-bold">Expert Chat</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab('local')}
-          className={`flex-1 py-3 flex flex-col items-center gap-1 ${activeTab === 'local' ? 'text-orange-600 border-t-2 border-orange-600' : 'text-gray-400'}`}
-        >
-          <i className="fa-solid fa-star"></i>
-          <span className="text-[10px] font-bold">Picks</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab('resources')}
-          className={`flex-1 py-3 flex flex-col items-center gap-1 ${activeTab === 'resources' ? 'text-orange-600 border-t-2 border-orange-600' : 'text-gray-400'}`}
-        >
-          <i className="fa-solid fa-book-open"></i>
-          <span className="text-[10px] font-bold">Resources</span>
-        </button>
+      <nav className="flex md:hidden border-t bg-white h-16">
+        <button onClick={() => setActiveTab('chat')} className={`flex-1 flex flex-col items-center justify-center gap-1 ${activeTab === 'chat' ? 'text-orange-600' : 'text-gray-400'}`}><i className="fa-solid fa-message"></i><span className="text-[10px] font-bold">Chat</span></button>
+        <button onClick={() => setActiveTab('local')} className={`flex-1 flex flex-col items-center justify-center gap-1 ${activeTab === 'local' ? 'text-orange-600' : 'text-gray-400'}`}><i className="fa-solid fa-star"></i><span className="text-[10px] font-bold">Local</span></button>
       </nav>
     </div>
   );
