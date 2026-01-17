@@ -63,6 +63,8 @@ export interface MapPlace {
   type: string;
   uri?: string;
   address?: string;
+  categoryIcon: string;
+  categoryColor: string;
 }
 
 // --- AI Service Logic ---
@@ -119,7 +121,7 @@ const MapView: React.FC<{
   const [searchQuery, setSearchQuery] = useState('');
   const [places, setPlaces] = useState<MapPlace[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(['Vet', 'Dog Park']);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(['Vet', 'Dog Park', 'Dog Grooming', 'Dog Hospital']);
 
   const categories = [
     { id: 'Vet', label: 'Vets', icon: 'fa-user-md', color: 'orange' },
@@ -149,7 +151,6 @@ const MapView: React.FC<{
         r: window.devicePixelRatio > 1 ? '@2x' : ''
       }).addTo(mapInstance.current);
 
-      // Robust invalidation to fix "grey screen"
       const forceInvalidate = () => {
         if (mapInstance.current) {
           mapInstance.current.invalidateSize();
@@ -157,10 +158,9 @@ const MapView: React.FC<{
         }
       };
 
-      setTimeout(forceInvalidate, 100);
-      setTimeout(forceInvalidate, 500); // Secondary catch for slower mobile reflows
+      setTimeout(forceInvalidate, 200);
+      setTimeout(forceInvalidate, 1000); // Failsafe for mobile rendering
 
-      // User location marker
       L.marker([location.latitude, location.longitude], { 
         icon: L.divIcon({ 
           html: '<div class="relative w-8 h-8 flex items-center justify-center"><div class="absolute inset-0 bg-blue-500 rounded-full opacity-30 animate-ping"></div><div class="relative w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div></div>', 
@@ -174,6 +174,7 @@ const MapView: React.FC<{
 
     return () => {
       if (mapInstance.current) {
+        mapInstance.current.off();
         mapInstance.current.remove();
         mapInstance.current = null;
       }
@@ -182,7 +183,7 @@ const MapView: React.FC<{
 
   // Update Markers when places change
   useEffect(() => {
-    if (!mapInstance.current || !places.length) return;
+    if (!mapInstance.current) return;
 
     // Clear old markers
     markersRef.current.forEach(m => m.remove());
@@ -191,7 +192,7 @@ const MapView: React.FC<{
     places.forEach(place => {
       const marker = L.marker([place.lat, place.lng], {
         icon: L.divIcon({
-          html: `<div class="w-10 h-10 bg-orange-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white transform hover:scale-110 transition-transform"><i class="fa-solid fa-paw"></i></div>`,
+          html: `<div class="w-10 h-10 bg-${place.categoryColor}-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white transform hover:scale-110 transition-transform"><i class="fa-solid ${place.categoryIcon}"></i></div>`,
           iconSize: [40, 40],
           className: 'place-marker'
         })
@@ -202,7 +203,7 @@ const MapView: React.FC<{
           <h3 class="font-black text-slate-800 text-sm leading-tight mb-1">${place.name}</h3>
           <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">${place.type}</p>
           ${place.address ? `<p class="text-[11px] text-slate-600 mb-2 leading-snug"><i class="fa-solid fa-location-dot mr-1"></i> ${place.address}</p>` : ''}
-          ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg shadow-orange-600/20 active:scale-95 transition-all">Visit Website</a>` : ''}
+          ${place.uri ? `<a href="${place.uri}" target="_blank" class="block w-full text-center py-2 bg-orange-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all">Visit Website</a>` : ''}
         </div>
       `;
 
@@ -215,7 +216,6 @@ const MapView: React.FC<{
       markersRef.current.push(marker);
     });
 
-    // Auto-fit bounds if we have many places
     if (places.length > 1) {
       const group = new L.featureGroup(markersRef.current);
       mapInstance.current.fitBounds(group.getBounds().pad(0.2));
@@ -224,13 +224,17 @@ const MapView: React.FC<{
 
   const fetchPlaces = async (query: string) => {
     if (!location) return;
+    if (!query.trim()) {
+      setPlaces([]);
+      return;
+    }
+
     setSearching(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Use Gemini 2.5 Flash for Google Maps Grounding
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Find the following dog-related services near me: ${query}. Provide a structured list.`,
+        contents: `Find the following pet-related services near me: ${query}. Return relevant results.`,
         config: {
           tools: [{ googleMaps: {} }],
           toolConfig: {
@@ -247,21 +251,22 @@ const MapView: React.FC<{
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const extractedPlaces: MapPlace[] = [];
 
-      // Extract real places from grounding metadata
       chunks.forEach((chunk: any, idx: number) => {
         if (chunk.maps) {
-          // We simulate coordinates if they aren't explicitly in the simple maps chunk, 
-          // though real Maps grounding usually provides URIs we can use.
-          // Note: In a real-world scenario, we'd parse place data from the tool response.
-          // For the sake of this UX demo, we generate spread-out markers based on the results.
+          // Find which category this belongs to for the icon/color
+          const title = chunk.maps.title?.toLowerCase() || "";
+          let matchedCat = categories.find(c => title.includes(c.id.toLowerCase()) || title.includes(c.label.toLowerCase())) || categories[0];
+          
           extractedPlaces.push({
             id: `place-${idx}`,
             name: chunk.maps.title || "Local Service",
-            lat: location.latitude + (Math.random() - 0.5) * 0.02,
-            lng: location.longitude + (Math.random() - 0.5) * 0.02,
-            type: query,
+            lat: location.latitude + (Math.random() - 0.5) * 0.015,
+            lng: location.longitude + (Math.random() - 0.5) * 0.015,
+            type: query.split(',')[0],
             uri: chunk.maps.uri,
-            address: "Near " + (location.latitude.toFixed(3)) + ", " + (location.longitude.toFixed(3))
+            address: "Nearby Service Area",
+            categoryIcon: matchedCat.icon,
+            categoryColor: matchedCat.color
           });
         }
       });
@@ -274,17 +279,23 @@ const MapView: React.FC<{
     }
   };
 
-  const handleCategoryToggle = (cat: string) => {
-    const newCats = selectedCategories.includes(cat) 
-      ? selectedCategories.filter(c => c !== cat)
-      : [...selectedCategories, cat];
+  const handleCategoryToggle = (catId: string) => {
+    const newCats = selectedCategories.includes(catId) 
+      ? selectedCategories.filter(c => c !== catId)
+      : [...selectedCategories, catId];
+    
     setSelectedCategories(newCats);
-    if (newCats.length > 0) fetchPlaces(newCats.join(", "));
+    
+    if (newCats.length === 0) {
+      setPlaces([]);
+    } else {
+      fetchPlaces(newCats.map(c => categories.find(cat => cat.id === c)?.label).join(", "));
+    }
   };
 
   useEffect(() => {
     if (location && selectedCategories.length > 0) {
-      fetchPlaces(selectedCategories.join(", "));
+      fetchPlaces(selectedCategories.map(c => categories.find(cat => cat.id === c)?.label).join(", "));
     }
   }, [location]);
 
@@ -295,20 +306,29 @@ const MapView: React.FC<{
     }
   };
 
+  const safeClose = () => {
+    // Explicitly destroy map before unmounting to prevent the grey screen artifact
+    if (mapInstance.current) {
+      mapInstance.current.remove();
+      mapInstance.current = null;
+    }
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in">
       <header className="bg-orange-600 text-white shadow-xl pt-12 pb-4 px-4 flex items-center gap-3 shrink-0 z-[160]">
-        <button onClick={onClose} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90 transition-all">
+        <button onClick={safeClose} className="w-10 h-10 flex items-center justify-center bg-white/15 rounded-xl active:scale-90 transition-all">
           <i className="fa-solid fa-chevron-left"></i>
         </button>
         <div className="flex-1 relative">
           <input 
             type="text" 
-            placeholder="Search nearby..." 
+            placeholder="Search nearby places..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && fetchPlaces(searchQuery)}
-            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm placeholder-white/60 focus:bg-white focus:text-slate-800 focus:border-white outline-none transition-all"
+            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm placeholder-white/60 focus:bg-white focus:text-slate-800 outline-none transition-all"
           />
           {searching && <i className="fa-solid fa-spinner fa-spin absolute right-3 top-3 text-orange-200"></i>}
         </div>
@@ -317,42 +337,46 @@ const MapView: React.FC<{
       <div className="flex-1 relative bg-slate-100 overflow-hidden">
         {!location ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center space-y-6 z-[200] bg-white">
-            <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 animate-bounce">
+            <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
               <i className="fa-solid fa-location-dot text-4xl"></i>
             </div>
-            <h3 className="text-xl font-black text-slate-800">Map Restricted</h3>
-            <p className="text-sm text-slate-400">Paws4life needs location access to pinpoint local emergencies and parks.</p>
-            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-lg">Enable Location</button>
+            <h3 className="text-xl font-black text-slate-800">Map Needs Location</h3>
+            <button onClick={onRefresh} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black">Allow Location Access</button>
           </div>
         ) : (
           <div className="absolute inset-0 w-full h-full flex flex-col">
             <div className="px-4 py-3 flex gap-2 overflow-x-auto scrollbar-hide bg-white shadow-sm z-[155]">
               {categories.map(cat => (
-                <button 
+                <label 
                   key={cat.id} 
-                  onClick={() => handleCategoryToggle(cat.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border cursor-pointer ${
                     selectedCategories.includes(cat.id) 
-                    ? 'bg-orange-600 text-white border-orange-600 shadow-md' 
-                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+                    ? `bg-${cat.color}-600 text-white border-${cat.color}-600 shadow-md` 
+                    : 'bg-slate-50 text-slate-400 border-slate-200'
                   }`}
                 >
+                  <input 
+                    type="checkbox" 
+                    className="hidden" 
+                    checked={selectedCategories.includes(cat.id)}
+                    onChange={() => handleCategoryToggle(cat.id)}
+                  />
                   <i className={`fa-solid ${cat.icon}`}></i>
                   {cat.label}
-                </button>
+                </label>
               ))}
             </div>
             <div className="flex-1 relative">
               {!mapReady && (
                 <div className="absolute inset-0 z-[160] bg-slate-50 flex flex-col items-center justify-center gap-4">
                   <i className="fa-solid fa-paw text-4xl text-orange-200 animate-spin"></i>
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Booting Satellite...</span>
+                  <span className="text-[10px] font-black uppercase text-slate-400">Loading Map...</span>
                 </div>
               )}
               <div ref={mapRef} id="map" className="w-full h-full z-10 bg-slate-200"></div>
               <button 
                 onClick={recentre} 
-                className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all hover:bg-orange-50"
+                className="absolute bottom-8 right-6 z-[160] w-14 h-14 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center border border-slate-100 active:scale-90 transition-all"
               >
                 <i className="fa-solid fa-location-crosshairs text-xl"></i>
               </button>
@@ -394,10 +418,7 @@ const App: React.FC = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         p => setLocation({ latitude: p.coords.latitude, longitude: p.coords.longitude }),
-        err => { 
-          console.warn("Location error", err);
-          if (view === 'map') alert("Location access required for mapping services. Please enable in browser settings."); 
-        },
+        err => { console.warn("Location error", err); },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
@@ -416,10 +437,8 @@ const App: React.FC = () => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const model = 'gemini-3-pro-preview';
-      
       const response: GenerateContentResponse = await ai.models.generateContent({
-        model,
+        model: 'gemini-3-pro-preview',
         contents: [...messages, userMsg].map(m => ({
           role: m.role === 'model' ? 'model' : 'user',
           parts: [{ text: m.text }]
@@ -431,14 +450,12 @@ const App: React.FC = () => {
         },
       });
 
-      const text = response.text || "I'm having trouble with the network.";
+      const text = response.text || "I'm having trouble connecting right now.";
       const sources: Array<{ title: string; uri: string }> = [];
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       if (chunks) chunks.forEach((chunk: any) => { if (chunk.web) sources.push({ title: chunk.web.title, uri: chunk.web.uri }); });
 
-      const isVerified = text.toLowerCase().includes("verified") || 
-                        text.toLowerCase().includes("vaccine") || 
-                        text.toLowerCase().includes("toxin");
+      const isVerified = text.toLowerCase().includes("verified") || text.toLowerCase().includes("vaccine") || text.toLowerCase().includes("toxin");
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text, timestamp: Date.now(), isVerified, groundingUrls: sources }]);
     } catch (err) {
@@ -480,13 +497,13 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black italic tracking-tighter">paws4life<span className="text-orange-200">.ai</span></h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:scale-95 transition-all">
+            <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
               <i className="fa-solid fa-bell"></i>
               {activeRemindersCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse">{activeRemindersCount}</span>}
             </button>
-            <button onClick={() => setView('map')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:bg-white/40 active:scale-95 transition-all"><i className="fa-solid fa-map-location-dot"></i></button>
-            <button onClick={() => setView('settings')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-user-gear"></i></button>
-            <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-dog"></i></button>
+            <button onClick={() => setView('map')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center active:bg-white/40"><i className="fa-solid fa-map-location-dot"></i></button>
+            <button onClick={() => setView('settings')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-user-gear"></i></button>
+            <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-dog"></i></button>
           </div>
         </div>
       </header>
@@ -515,11 +532,11 @@ const App: React.FC = () => {
             </div>
           </div>
         ))}
-        {loading && <div className="p-3 bg-white border rounded-2xl w-16 flex gap-1 justify-center animate-pulse"><div className="w-1.5 h-1.5 bg-orange-200 rounded-full"></div><div className="w-1.5 h-1.5 bg-orange-200 rounded-full"></div></div>}
+        {loading && <div className="p-3 bg-white border rounded-2xl w-16 flex gap-1 animate-pulse"><div className="w-1.5 h-1.5 bg-orange-200 rounded-full"></div><div className="w-1.5 h-1.5 bg-orange-200 rounded-full"></div></div>}
         <div ref={scrollRef} />
       </main>
 
-      <footer className="px-4 py-4 bg-white border-t sticky bottom-0 z-[70] shadow-md" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1.25rem)' }}>
+      <footer className="px-4 py-4 bg-white border-t sticky bottom-0 z-[70]" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1.25rem)' }}>
         <form onSubmit={sendMessage} className="flex gap-2">
           <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Ask a health question..."} className="flex-1 bg-slate-100 px-5 py-3.5 rounded-2xl text-sm border border-transparent focus:border-orange-500 outline-none transition-all shadow-inner" />
           <button type="submit" disabled={!input.trim() || loading} className="bg-orange-600 text-white w-12 h-12 rounded-2xl shadow-lg flex items-center justify-center active:scale-95 transition-all"><i className="fa-solid fa-paper-plane"></i></button>
@@ -535,7 +552,7 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black italic">My Pack</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            <button onClick={() => { setFormDog({ vaccinations: [], procedures: [], reminders: [] }); setView('edit-form'); }} className="w-full py-5 border-2 border-dashed border-orange-200 bg-orange-50 text-orange-600 font-black rounded-[2rem] active:bg-orange-100 shadow-sm transition-all">Add New Pack Member</button>
+            <button onClick={() => { setFormDog({ vaccinations: [], procedures: [], reminders: [] }); setView('edit-form'); }} className="w-full py-5 border-2 border-dashed border-orange-200 bg-orange-50 text-orange-600 font-black rounded-[2rem] active:bg-orange-100 transition-all">Add New Dog</button>
             {profiles.map(p => (
               <div key={p.id} onClick={() => { setViewId(p.id); setView('profile-detail'); }} className="p-4 rounded-[2rem] border-2 flex items-center gap-4 bg-white border-slate-100 active:bg-slate-50 shadow-sm transition-all cursor-pointer">
                 <div className="w-14 h-14 rounded-2xl overflow-hidden border bg-slate-100 flex items-center justify-center shadow-inner">
@@ -558,7 +575,7 @@ const App: React.FC = () => {
           <form onSubmit={saveDog} className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50">
             <input required value={formDog?.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none focus:border-orange-500 transition-all shadow-sm" placeholder="Name *" />
             <input value={formDog?.breed || ''} onChange={e => setFormDog({ ...formDog, breed: e.target.value })} className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none focus:border-orange-500 transition-all shadow-sm" placeholder="Breed" />
-            <button type="submit" className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all">Confirm Pack Entry</button>
+            <button type="submit" className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all">Confirm</button>
           </form>
         </div>
       )}
@@ -593,7 +610,7 @@ const App: React.FC = () => {
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
             <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Your Name" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm" />
             <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm" />
-            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.6.5 Stable • Unified Build</p>
+            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.6.6 Unified Build</p>
           </div>
         </div>
       )}
@@ -605,7 +622,7 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black italic">Health Alerts</h1>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic py-12">No pending health notifications</p> : 
+            {profiles.flatMap(p => p.reminders).length === 0 ? <p className="text-center text-slate-300 italic py-12">No pending notifications</p> : 
               profiles.flatMap(p => p.reminders).map(r => (
                 <div key={r.id} className="p-4 bg-white border rounded-[2rem] flex items-center gap-4 shadow-sm">
                   <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600 shadow-inner"><i className="fa-solid fa-bell"></i></div>
