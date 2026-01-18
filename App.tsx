@@ -460,7 +460,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Chat Content */}
-      <main className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 scrollbar-hide relative">
+      <main className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-60 scrollbar-hide relative">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center px-8 py-20 animate-in">
             <div className="w-24 h-24 bg-white rounded-[2.5rem] flex items-center justify-center text-orange-600 mb-8 shadow-2xl border-4 border-orange-50"><i className="fa-solid fa-shield-dog text-4xl"></i></div>
