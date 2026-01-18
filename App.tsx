@@ -198,7 +198,7 @@ const MapView: React.FC<{
   return (
     <div ref={containerRef} className="fixed inset-0 z-[150] bg-white flex flex-col animate-in">
       <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3">
-        <button onClick={onClose} className="w-10 h-10 bg-white/20 rounded-xl"><i className="fa-solid fa-chevron-left"></i></button>
+        <button onClick={onClose} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-chevron-left"></i></button>
         <div className="flex-1 relative">
           <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && fetchPlaces(searchQuery, selectedCategories)} className="w-full bg-white/10 rounded-xl px-4 py-2 text-sm placeholder-white/60 focus:bg-white focus:text-slate-800" placeholder="Search nearby pet spots..." />
           <button onClick={() => fetchPlaces(searchQuery, selectedCategories)} className="absolute right-3 top-2 text-white/50">{searching ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-search"></i>}</button>
@@ -236,6 +236,36 @@ const App: React.FC = () => {
 
   const activeDog = profiles.find(p => p.id === activeId);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Reminders Logic
+  const getAllReminders = () => {
+    return profiles.flatMap(p => p.reminders.map(r => ({ ...r, dog: p.name })));
+  };
+
+  const getFilteredReminders = (daysRange?: number) => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    
+    let endRange: Date | null = null;
+    if (daysRange !== undefined) {
+      endRange = new Date(now);
+      endRange.setDate(now.getDate() + daysRange);
+    }
+
+    return getAllReminders()
+      .filter(r => {
+        const rDate = new Date(r.date);
+        rDate.setHours(0, 0, 0, 0);
+        
+        const isPast = rDate < now;
+        const isWithinRange = endRange ? rDate <= endRange : true;
+        
+        return !isPast && isWithinRange;
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+  };
+
+  const upcomingRemindersCount = getFilteredReminders(7).length;
 
   useEffect(() => {
     localStorage.setItem('paws_v3_profiles', JSON.stringify(profiles));
@@ -341,7 +371,14 @@ const App: React.FC = () => {
           <h1 className="text-xl font-black italic tracking-tighter">paws4life<span className="text-orange-200">.ai</span></h1>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setView('reminders-list')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95"><i className="fa-solid fa-bell"></i></button>
+          <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95">
+            <i className="fa-solid fa-bell"></i>
+            {upcomingRemindersCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-orange-600 animate-in">
+                {upcomingRemindersCount}
+              </span>
+            )}
+          </button>
           <button onClick={() => setView('map')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95"><i className="fa-solid fa-map-location-dot"></i></button>
           <button onClick={() => setView('settings')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95"><i className="fa-solid fa-cog"></i></button>
           <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95"><i className="fa-solid fa-dog"></i></button>
@@ -616,11 +653,11 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[240] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3">
             <button onClick={() => setView('chat')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-chevron-left"></i></button>
-            <h2 className="text-xl font-black italic">Global Alerts</h2>
+            <h2 className="text-xl font-black italic">Reminders</h2>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            {profiles.flatMap(p => p.reminders.map(r => ({ ...r, dog: p.name }))).length === 0 ? <div className="text-center py-20 text-slate-300 italic opacity-50"><i className="fa-solid fa-bell-slash text-4xl mb-4 block"></i> No pending notifications</div> : 
-              profiles.flatMap(p => p.reminders.map(r => ({ ...r, dog: p.name }))).sort((a,b) => a.date.localeCompare(b.date)).map(r => (
+            {getFilteredReminders().length === 0 ? <div className="text-center py-20 text-slate-300 italic opacity-50"><i className="fa-solid fa-bell-slash text-4xl mb-4 block"></i> No pending notifications</div> : 
+              getFilteredReminders().map(r => (
                 <div key={r.id} className="p-5 bg-white border border-slate-100 rounded-[2rem] flex items-center gap-4 shadow-sm">
                   <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 shadow-inner"><i className="fa-solid fa-bell"></i></div>
                   <div className="flex-1">
