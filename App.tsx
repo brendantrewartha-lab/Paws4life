@@ -499,7 +499,7 @@ const App: React.FC = () => {
             <div className="w-20 h-20 bg-white rounded-[2rem] mx-auto flex items-center justify-center shadow-2xl"><i className="fa-solid fa-paw text-4xl text-orange-600"></i></div>
             <div>
               <h1 className="text-4xl font-black tracking-tighter mb-2">paws4life<span className="text-orange-200">.ai</span></h1>
-              <p className="opacity-80 font-bold text-sm uppercase tracking-widest">The Pack Hub</p>
+              <p className="opacity-80 font-bold text-sm uppercase tracking-widest">Your Canine Companion</p>
             </div>
             <div className="space-y-3">
               <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} className="w-full bg-white text-slate-800 rounded-2xl px-5 py-4 font-bold placeholder-slate-400 outline-none shadow-xl border-2 border-transparent focus:border-white" placeholder="Name *" />
