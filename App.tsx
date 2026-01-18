@@ -86,9 +86,9 @@ You are "paws4life.ai", an elite Veterinary Assistant.
 
 ### BEHAVIOR:
 - User is ${userName || 'Pet Owner'}.
-- Reference toxins or vaccines specifically.
+- Reference toxins or vaccines specifically when applicable.
 - Recommend vet visits for medical issues.
-- Be concise.
+- Be concise, professional, and helpful.
 ${profile ? `\n\n### ACTIVE DOG PROFILE: ${profile.name} (${profile.breed || 'Unknown'}).` : ''}
 `;
 };
@@ -126,12 +126,15 @@ const MapView: React.FC<{
       if (mapInstance.current) mapInstance.current.remove();
       mapInstance.current = L.map(mapRef.current, { zoomControl: false, attributionControl: false }).setView([location.latitude, location.longitude], 14);
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapInstance.current);
+      
+      // User marker
       L.marker([location.latitude, location.longitude], { 
         icon: L.divIcon({ 
           html: '<div class="relative w-8 h-8 flex items-center justify-center"><div class="absolute inset-0 bg-blue-500 rounded-full opacity-30 animate-ping"></div><div class="relative w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div></div>', 
           iconSize: [32, 32], className: 'user-marker'
         }) 
       }).addTo(mapInstance.current);
+      
       setMapReady(true);
       setTimeout(() => mapInstance.current?.invalidateSize(), 500);
     };
@@ -172,7 +175,7 @@ const MapView: React.FC<{
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Search local pet services for: ${query}. For each result strictly provide its details as: [Name: Name, CatID: OneOf(${categoryIds.join(',')}), Lat: Latitude, Lng: Longitude].`,
+        contents: `Search local pet services for: ${query}. Strictly provide: [Name: Name, CatID: OneOf(${categoryIds.join(',')}), Lat: Latitude, Lng: Longitude].`,
         config: { tools: [{ googleMaps: {} }], toolConfig: { retrievalConfig: { latLng: { latitude: location.latitude, longitude: location.longitude } } } },
       });
       const responseText = response.text || "";
@@ -186,6 +189,12 @@ const MapView: React.FC<{
       }
       setPlaces(extracted);
     } catch (e) { console.error(e); } finally { setSearching(false); }
+  };
+
+  const centerMap = () => {
+    if (mapInstance.current && location) {
+      mapInstance.current.setView([location.latitude, location.longitude], 15);
+    }
   };
 
   const toggleCat = (id: string) => {
@@ -211,7 +220,12 @@ const MapView: React.FC<{
           </button>
         ))}
       </div>
-      <div ref={mapRef} id="map" className="flex-1 bg-slate-200"></div>
+      <div className="flex-1 relative">
+        <div ref={mapRef} id="map" className="w-full h-full bg-slate-200"></div>
+        <button onClick={centerMap} className="absolute bottom-6 right-6 w-12 h-12 bg-white text-orange-600 rounded-2xl shadow-2xl flex items-center justify-center z-[10] border border-slate-100 active:scale-95 transition-all">
+          <i className="fa-solid fa-location-crosshairs text-lg"></i>
+        </button>
+      </div>
     </div>
   );
 };
@@ -219,10 +233,10 @@ const MapView: React.FC<{
 // --- App Component ---
 
 const App: React.FC = () => {
-  const [profiles, setProfiles] = useState<DogProfile[]>(() => JSON.parse(localStorage.getItem('paws_v3_profiles') || '[]'));
-  const [user, setUser] = useState<UserProfile>(() => JSON.parse(localStorage.getItem('paws_v3_user') || '{"name":"","email":"","phone":"","address":""}'));
-  const [activeId, setActiveId] = useState<string | null>(localStorage.getItem('paws_v3_active'));
-  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>(() => JSON.parse(localStorage.getItem('paws_v3_admin_users') || '[]'));
+  const [profiles, setProfiles] = useState<DogProfile[]>(() => JSON.parse(localStorage.getItem('paws_v4_profiles') || '[]'));
+  const [user, setUser] = useState<UserProfile>(() => JSON.parse(localStorage.getItem('paws_v4_user') || '{"name":"","email":"","phone":"","address":""}'));
+  const [activeId, setActiveId] = useState<string | null>(localStorage.getItem('paws_v4_active'));
+  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>(() => JSON.parse(localStorage.getItem('paws_v4_admin_users') || '[]'));
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -244,18 +258,22 @@ const App: React.FC = () => {
     return date;
   };
 
+  const getTodayAtMidnight = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
   const getAllReminders = () => {
     return profiles.flatMap(p => p.reminders.map(r => ({ ...r, dog: p.name })));
   };
 
   const getFilteredReminders = (daysRange?: number) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = getTodayAtMidnight();
     
     return getAllReminders()
       .filter(r => {
         const rDate = parseLocalISO(r.date);
-        
         const isPast = rDate < today;
         if (isPast) return false;
 
@@ -272,14 +290,14 @@ const App: React.FC = () => {
   const upcomingRemindersCount = getFilteredReminders(7).length;
 
   useEffect(() => {
-    localStorage.setItem('paws_v3_profiles', JSON.stringify(profiles));
-    localStorage.setItem('paws_v3_user', JSON.stringify(user));
-    if (activeId) localStorage.setItem('paws_v3_active', activeId);
+    localStorage.setItem('paws_v4_profiles', JSON.stringify(profiles));
+    localStorage.setItem('paws_v4_user', JSON.stringify(user));
+    if (activeId) localStorage.setItem('paws_v4_active', activeId);
     if (user.email && user.name) {
       if (!registeredUsers.some(u => u.email === user.email)) {
         const next = [...registeredUsers, user];
         setRegisteredUsers(next);
-        localStorage.setItem('paws_v3_admin_users', JSON.stringify(next));
+        localStorage.setItem('paws_v4_admin_users', JSON.stringify(next));
       }
     }
   }, [profiles, user, activeId]);
@@ -365,6 +383,18 @@ const App: React.FC = () => {
     setRecordModal(null);
   };
 
+  const deleteRecord = (id: string) => {
+    if (confirm("Delete this record permanently?")) {
+      setFormDog(prev => ({ ...prev, healthRecords: prev.healthRecords?.filter(r => r.id !== id) }));
+    }
+  };
+
+  const deleteReminder = (id: string) => {
+    if (confirm("Delete this reminder permanently?")) {
+      setFormDog(prev => ({ ...prev, reminders: prev.reminders?.filter(r => r.id !== id) }));
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden">
       {/* Header */}
@@ -377,7 +407,7 @@ const App: React.FC = () => {
           <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95">
             <i className="fa-solid fa-bell"></i>
             {upcomingRemindersCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-orange-600 animate-bounce">
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-orange-600">
                 {upcomingRemindersCount}
               </span>
             )}
@@ -391,10 +421,14 @@ const App: React.FC = () => {
       {/* Main Chat Content */}
       <main className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 scrollbar-hide relative">
         {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-20">
-            <div className="w-20 h-20 bg-orange-100 rounded-[2rem] flex items-center justify-center text-orange-600 mb-6 shadow-inner"><i className="fa-solid fa-shield-dog text-3xl"></i></div>
-            <h2 className="text-lg font-black uppercase tracking-[0.2em] leading-relaxed mb-2 text-slate-800">Safety First.</h2>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ask your canine health advisor anything...</p>
+          <div className="h-full flex flex-col items-center justify-center text-center px-6 py-20 animate-in">
+            <div className="w-24 h-24 bg-orange-100 rounded-[2.5rem] flex items-center justify-center text-orange-600 mb-8 shadow-inner border-4 border-white"><i className="fa-solid fa-shield-dog text-4xl"></i></div>
+            <h2 className="text-2xl font-black tracking-tight text-slate-800 mb-2">paws4life Advisor</h2>
+            <p className="text-sm text-slate-500 font-medium leading-relaxed mb-8">Expert-vetted guidance, local service finders, and medical milestone tracking in one place.</p>
+            <div className="grid grid-cols-2 gap-3 w-full">
+               <button onClick={() => setInput("What foods are toxic to dogs?")} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-orange-600 transition-colors">Toxic Foods List</button>
+               <button onClick={() => setInput("Nearby emergency vets")} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-orange-600 transition-colors">Emergency Vets</button>
+            </div>
           </div>
         )}
         {messages.map(m => (
@@ -417,23 +451,6 @@ const App: React.FC = () => {
       </footer>
 
       {/* --- Overlays --- */}
-
-      {view === 'registration' && (
-        <div className="fixed inset-0 z-[500] bg-orange-600 flex items-center justify-center p-6 text-white animate-in">
-          <div className="w-full space-y-8 text-center">
-            <div className="w-20 h-20 bg-white rounded-[2rem] mx-auto flex items-center justify-center shadow-2xl"><i className="fa-solid fa-paw text-4xl text-orange-600"></i></div>
-            <div>
-              <h1 className="text-4xl font-black tracking-tighter mb-2">paws4life<span className="text-orange-200">.ai</span></h1>
-              <p className="opacity-80 font-bold text-sm uppercase tracking-widest">Canine Health Guardian</p>
-            </div>
-            <div className="space-y-3">
-              <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} className="w-full bg-white text-slate-800 rounded-2xl px-5 py-4 font-bold placeholder-slate-400 outline-none shadow-xl border-2 border-transparent focus:border-white" placeholder="Owner Name *" />
-              <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} className="w-full bg-white text-slate-800 rounded-2xl px-5 py-4 font-bold placeholder-slate-400 outline-none shadow-xl border-2 border-transparent focus:border-white" placeholder="Email Address *" />
-              <button onClick={() => user.name && user.email && setView('chat')} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black shadow-2xl uppercase tracking-[0.2em] text-xs mt-4 active:scale-95 transition-all">Start Journey</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {view === 'profiles' && (
         <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in">
@@ -463,82 +480,72 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[210] bg-white flex flex-col animate-in">
           <header className="bg-orange-600 text-white p-4 pt-12 flex items-center justify-between">
             <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-chevron-left"></i></button>
-            <h2 className="text-xl font-black">Pet Details</h2>
+            <h2 className="text-xl font-black">Edit Details</h2>
             <button type="submit" form="dogForm" className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-check"></i></button>
           </header>
           <form id="dogForm" onSubmit={saveDog} className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50">
             <div className="flex flex-col items-center gap-4">
-              <div className="w-36 h-36 bg-white rounded-[3rem] border-4 border-white shadow-2xl overflow-hidden relative flex items-center justify-center">
+              <div className="w-32 h-32 bg-white rounded-[3rem] border-4 border-white shadow-2xl overflow-hidden relative flex items-center justify-center">
                 {formDog.photo ? <img src={formDog.photo} className="w-full h-full object-cover" /> : <i className="fa-solid fa-dog text-5xl text-slate-100"></i>}
                 <label className="absolute inset-0 flex items-center justify-center bg-black/10 opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
-                   <div className="bg-orange-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl border-2 border-white"><i className="fa-solid fa-camera"></i></div>
+                   <div className="bg-orange-600 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-2xl border-2 border-white"><i className="fa-solid fa-camera text-sm"></i></div>
                    <input type="file" className="hidden" accept="image/*" onChange={e => e.target.files?.[0] && scanBreed(e.target.files[0])} />
                 </label>
               </div>
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] text-center max-w-[200px]">Photo enables automated breed recognition</p>
             </div>
 
             <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Identity</label>
-              <input required value={formDog.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-white border border-slate-100 px-5 py-4 rounded-2xl font-bold shadow-sm focus:border-orange-500 outline-none transition-all" placeholder="Dog's Name *" />
-              <input value={formDog.breed || ''} onChange={e => setFormDog({ ...formDog, breed: e.target.value })} className="w-full bg-white border border-slate-100 px-5 py-4 rounded-2xl font-bold shadow-sm focus:border-orange-500 outline-none transition-all" placeholder="Breed (Manual or Scan)" />
+              <input required value={formDog.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-white border border-slate-100 px-5 py-4 rounded-2xl font-bold shadow-sm outline-none" placeholder="Dog's Name *" />
+              <input value={formDog.breed || ''} onChange={e => setFormDog({ ...formDog, breed: e.target.value })} className="w-full bg-white border border-slate-100 px-5 py-4 rounded-2xl font-bold shadow-sm outline-none" placeholder="Breed" />
               <div className="flex gap-4">
-                <input value={formDog.age || ''} onChange={e => setFormDog({ ...formDog, age: e.target.value })} className="flex-1 bg-white border border-slate-100 px-5 py-4 rounded-2xl font-bold outline-none shadow-sm" placeholder="Age" />
-                <input value={formDog.weight || ''} onChange={e => setFormDog({ ...formDog, weight: e.target.value })} className="flex-1 bg-white border border-slate-100 px-5 py-4 rounded-2xl font-bold outline-none shadow-sm" placeholder="Weight (kg)" />
+                <input value={formDog.age || ''} onChange={e => setFormDog({ ...formDog, age: e.target.value })} className="flex-1 bg-white border border-slate-100 px-5 py-4 rounded-2xl font-bold outline-none" placeholder="Age" />
+                <input value={formDog.weight || ''} onChange={e => setFormDog({ ...formDog, weight: e.target.value })} className="flex-1 bg-white border border-slate-100 px-5 py-4 rounded-2xl font-bold outline-none" placeholder="Weight (kg)" />
               </div>
             </div>
 
             <div className="space-y-4">
-              <div className="flex justify-between items-center ml-1">
-                <h3 className="font-black uppercase tracking-[0.2em] text-[10px] text-slate-400">Health Milestones</h3>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setRecordModal({ isOpen: true, type: 'Vaccination', title: '', date: new Date().toISOString().split('T')[0], notes: '' })} className="bg-orange-600 text-white text-[9px] px-3 py-1.5 rounded-full font-black uppercase tracking-widest shadow-md">Add Vacc.</button>
-                  <button type="button" onClick={() => setRecordModal({ isOpen: true, type: 'Visit', title: '', date: new Date().toISOString().split('T')[0], notes: '' })} className="bg-blue-600 text-white text-[9px] px-3 py-1.5 rounded-full font-black uppercase tracking-widest shadow-md">Add Visit</button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {formDog.healthRecords?.length === 0 ? <div className="text-center py-8 text-slate-300 italic text-xs bg-white rounded-[2rem] border border-dashed border-slate-200">No records found</div> : 
-                  formDog.healthRecords?.map(r => (
-                    <div key={r.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-2 h-8 rounded-full ${r.type === 'Vaccination' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
-                        <div>
-                          <div className="text-xs font-black text-slate-800">{r.title}</div>
-                          <div className="text-[9px] text-slate-400 font-bold uppercase">{r.type}</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-slate-500 font-black">{r.date}</span>
-                    </div>
-                  ))
-                }
-              </div>
+               <h3 className="font-black uppercase tracking-[0.2em] text-[10px] text-slate-400">History & Records</h3>
+               {formDog.healthRecords?.map(r => (
+                 <div key={r.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between shadow-sm">
+                   <div className="flex items-center gap-3">
+                     <div className={`w-1.5 h-6 rounded-full ${r.type === 'Vaccination' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
+                     <div><div className="text-xs font-black text-slate-800">{r.title}</div><div className="text-[9px] text-slate-400 font-bold">{r.date}</div></div>
+                   </div>
+                   <button type="button" onClick={() => deleteRecord(r.id)} className="text-red-300 hover:text-red-500 p-2 transition-colors"><i className="fa-solid fa-trash-can text-sm"></i></button>
+                 </div>
+               ))}
+               
+               <h3 className="font-black uppercase tracking-[0.2em] text-[10px] text-slate-400 mt-6">Future Reminders</h3>
+               {formDog.reminders?.map(r => (
+                 <div key={r.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between shadow-sm">
+                   <div className="flex items-center gap-3">
+                     <div className="w-1.5 h-6 rounded-full bg-slate-300"></div>
+                     <div><div className="text-xs font-black text-slate-800">{r.title}</div><div className="text-[9px] text-slate-400 font-bold">{r.date}</div></div>
+                   </div>
+                   <button type="button" onClick={() => deleteReminder(r.id)} className="text-red-300 hover:text-red-500 p-2 transition-colors"><i className="fa-solid fa-trash-can text-sm"></i></button>
+                 </div>
+               ))}
+            </div>
+
+            <div className="flex gap-2">
+               <button type="button" onClick={() => setRecordModal({ isOpen: true, type: 'Vaccination', title: '', date: new Date().toISOString().split('T')[0], notes: '' })} className="flex-1 bg-orange-50 text-orange-600 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest">+ Vaccination</button>
+               <button type="button" onClick={() => setRecordModal({ isOpen: true, type: 'Visit', title: '', date: new Date().toISOString().split('T')[0], notes: '' })} className="flex-1 bg-blue-50 text-blue-600 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest">+ Visit Record</button>
             </div>
             
-            <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all">Finish Profile</button>
+            <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-all">Update Member</button>
           </form>
 
-          {/* Record Modal Overlay */}
           {recordModal && (
-            <div className="fixed inset-0 z-[300] bg-slate-900/60 flex items-end justify-center animate-in">
-              <div className="bg-white w-full max-w-xl rounded-t-[3rem] p-8 space-y-6 shadow-[0_-20px_50px_rgba(0,0,0,0.2)]">
+            <div className="fixed inset-0 z-[300] bg-slate-900/60 flex items-end justify-center animate-in p-0">
+              <div className="bg-white w-full max-w-xl rounded-t-[3rem] p-8 space-y-6 shadow-2xl">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-xl font-black italic text-slate-800">New {recordModal.type} Entry</h3>
-                  <button onClick={() => setRecordModal(null)} className="text-slate-300 hover:text-slate-800 transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
+                  <h3 className="text-xl font-black italic">Add {recordModal.type}</h3>
+                  <button onClick={() => setRecordModal(null)} className="text-slate-300 hover:text-slate-800"><i className="fa-solid fa-xmark text-xl"></i></button>
                 </div>
                 <div className="space-y-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 block mb-2">Service Title</label>
-                    <input autoFocus value={recordModal.title} onChange={e => setRecordModal({...recordModal, title: e.target.value})} placeholder={`e.g. Parvovirus Booster or Grooming Session`} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white focus:border-orange-500 transition-all" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 block mb-2">Event Date (Calendar)</label>
-                    <input type="date" value={recordModal.date} onChange={e => setRecordModal({...recordModal, date: e.target.value})} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white focus:border-orange-500 transition-all" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 block mb-2">Additional Notes (Optional)</label>
-                    <textarea value={recordModal.notes} onChange={e => setRecordModal({...recordModal, notes: e.target.value})} rows={3} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white focus:border-orange-500 transition-all" placeholder="Enter any extra details..."></textarea>
-                  </div>
-                  <button onClick={handleAddRecord} className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all">Confirm & Add</button>
+                  <input autoFocus value={recordModal.title} onChange={e => setRecordModal({...recordModal, title: e.target.value})} placeholder="Title (e.g. Annual Checkup)" className="w-full bg-slate-50 border p-4 rounded-2xl font-bold" />
+                  <input type="date" value={recordModal.date} onChange={e => setRecordModal({...recordModal, date: e.target.value})} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold" />
+                  <button onClick={handleAddRecord} className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-xl">Confirm Entry</button>
                 </div>
               </div>
             </div>
@@ -578,6 +585,42 @@ const App: React.FC = () => {
               </div>
             </div>
 
+            {/* History Section */}
+            <div className="space-y-4">
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Carer History</h3>
+              <div className="space-y-3">
+                {formDog.healthRecords?.length === 0 ? <p className="text-xs text-slate-400 italic ml-1">No past records</p> : 
+                  formDog.healthRecords?.sort((a,b) => b.date.localeCompare(a.date)).map(r => (
+                    <div key={r.id} className="p-4 bg-white border border-slate-100 rounded-[1.5rem] flex items-center gap-4 shadow-sm">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${r.type === 'Vaccination' ? 'bg-orange-500' : 'bg-blue-500 shadow-blue-100 shadow-lg'}`}><i className={`fa-solid ${r.type === 'Vaccination' ? 'fa-syringe' : 'fa-calendar-check'} text-sm`}></i></div>
+                      <div className="flex-1">
+                        <div className="text-xs font-black text-slate-800">{r.title}</div>
+                        <div className="text-[9px] text-slate-400 font-bold uppercase">{r.date} • {r.type}</div>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+
+            {/* Upcoming Section */}
+            <div className="space-y-4">
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Upcoming Schedule</h3>
+              <div className="space-y-3">
+                {formDog.reminders?.filter(r => parseLocalISO(r.date) >= getTodayAtMidnight()).length === 0 ? <p className="text-xs text-slate-400 italic ml-1">No upcoming events</p> : 
+                  formDog.reminders?.filter(r => parseLocalISO(r.date) >= getTodayAtMidnight()).sort((a,b) => a.date.localeCompare(b.date)).map(r => (
+                    <div key={r.id} className="p-4 bg-orange-600 text-white rounded-[1.5rem] flex items-center gap-4 shadow-xl shadow-orange-100">
+                      <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-bell text-sm"></i></div>
+                      <div className="flex-1">
+                        <div className="text-xs font-black">{r.title}</div>
+                        <div className="text-[9px] opacity-70 font-bold uppercase tracking-widest">{r.date}</div>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+            
             <button onClick={() => { if(confirm("Permanently archive this companion data?")) { setProfiles(p => p.filter(d => d.id !== formDog.id)); setView('profiles'); } }} className="w-full text-red-400 font-black uppercase text-[10px] tracking-[0.3em] py-5 border border-red-50 rounded-[2rem] bg-red-50/20 active:bg-red-50 transition-all">Archive Profile</button>
           </div>
         </div>
@@ -591,23 +634,22 @@ const App: React.FC = () => {
           </header>
           <div className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50">
             <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-4">
-              <h3 className="font-black uppercase text-[10px] tracking-[0.2em] text-slate-400 mb-2 ml-1">Personal Identity</h3>
-              <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl font-bold outline-none focus:bg-white" placeholder="Full Name *" />
-              <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl font-bold outline-none focus:bg-white" placeholder="Email Address *" />
-              <input value={user.phone} onChange={e => setUser({ ...user, phone: e.target.value })} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl font-bold outline-none focus:bg-white" placeholder="Mobile Phone" />
-              <input value={user.address} onChange={e => setUser({ ...user, address: e.target.value })} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl font-bold outline-none focus:bg-white" placeholder="Physical Address" />
+              <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl font-bold outline-none" placeholder="Full Name *" />
+              <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl font-bold outline-none" placeholder="Email Address *" />
+              <input value={user.phone} onChange={e => setUser({ ...user, phone: e.target.value })} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl font-bold outline-none" placeholder="Mobile Phone" />
+              <input value={user.address} onChange={e => setUser({ ...user, address: e.target.value })} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl font-bold outline-none" placeholder="Physical Address" />
             </div>
 
             <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-4">
-              <h3 className="font-black uppercase text-[10px] tracking-[0.2em] text-slate-400 mb-2 ml-1">Social Ecosystem</h3>
-              <div className="flex items-center gap-3"><i className="fa-brands fa-instagram text-xl text-slate-300"></i><input value={user.socials?.instagram} onChange={e => setUser({ ...user, socials: { ...user.socials, instagram: e.target.value } })} className="flex-1 bg-slate-50 border p-4 rounded-2xl font-bold text-sm" placeholder="Instagram Handle" /></div>
-              <div className="flex items-center gap-3"><i className="fa-brands fa-facebook text-xl text-slate-300"></i><input value={user.socials?.facebook} onChange={e => setUser({ ...user, socials: { ...user.socials, facebook: e.target.value } })} className="flex-1 bg-slate-50 border p-4 rounded-2xl font-bold text-sm" placeholder="Facebook Profile" /></div>
-              <div className="flex items-center gap-3"><i className="fa-brands fa-x-twitter text-xl text-slate-300"></i><input value={user.socials?.x} onChange={e => setUser({ ...user, socials: { ...user.socials, x: e.target.value } })} className="flex-1 bg-slate-50 border p-4 rounded-2xl font-bold text-sm" placeholder="X / Twitter Name" /></div>
+              <h3 className="font-black uppercase text-[10px] tracking-[0.2em] text-slate-400 mb-2 ml-1">Social Hub</h3>
+              <div className="flex items-center gap-3"><i className="fa-brands fa-instagram text-xl text-slate-300"></i><input value={user.socials?.instagram} onChange={e => setUser({ ...user, socials: { ...user.socials, instagram: e.target.value } })} className="flex-1 bg-slate-50 border p-4 rounded-2xl font-bold text-sm" placeholder="Instagram" /></div>
+              <div className="flex items-center gap-3"><i className="fa-brands fa-facebook text-xl text-slate-300"></i><input value={user.socials?.facebook} onChange={e => setUser({ ...user, socials: { ...user.socials, facebook: e.target.value } })} className="flex-1 bg-slate-50 border p-4 rounded-2xl font-bold text-sm" placeholder="Facebook" /></div>
+              <div className="flex items-center gap-3"><i className="fa-brands fa-x-twitter text-xl text-slate-300"></i><input value={user.socials?.x} onChange={e => setUser({ ...user, socials: { ...user.socials, x: e.target.value } })} className="flex-1 bg-slate-50 border p-4 rounded-2xl font-bold text-sm" placeholder="X / Twitter" /></div>
             </div>
 
             <button onClick={() => setView('admin')} className="w-full py-4 text-slate-300 font-black uppercase text-[10px] tracking-[0.3em] border border-dashed border-slate-200 rounded-2xl active:bg-slate-100 transition-colors">Admin Governance</button>
             <div className="text-center pb-8 pt-4">
-              <p className="text-[9px] text-slate-300 font-black italic tracking-[0.3em]">paws4life.ai v3.0.2 • Intelligence Restored</p>
+              <p className="text-[9px] text-slate-300 font-black italic tracking-[0.3em]">paws4life.ai v3.0.3 • Enhanced View Mode</p>
             </div>
           </div>
         </div>
@@ -620,23 +662,15 @@ const App: React.FC = () => {
             <h2 className="text-xl font-black italic">System Oversight</h2>
           </header>
           <div className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50">
-            <h3 className="font-black uppercase tracking-[0.2em] text-[10px] text-slate-400 ml-1">Registered Pack Members ({registeredUsers.length})</h3>
+            <h3 className="font-black uppercase tracking-[0.2em] text-[10px] text-slate-400 ml-1">Registered Users ({registeredUsers.length})</h3>
             <div className="space-y-3">
-              {registeredUsers.length === 0 ? <p className="text-center py-12 text-slate-300 italic">No registrations logged</p> : 
-                registeredUsers.map((u, i) => (
-                  <div key={i} className="p-6 bg-white border border-slate-100 rounded-[2rem] shadow-sm">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="font-black text-slate-800 text-lg leading-none">{u.name}</div>
-                      <span className="text-[8px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-black uppercase tracking-widest">User ID #{i+1001}</span>
-                    </div>
-                    <div className="text-sm text-orange-600 font-bold mb-3">{u.email}</div>
-                    <div className="grid grid-cols-2 gap-2">
-                       <div className="text-[9px] text-slate-400 font-black uppercase"><i className="fa-solid fa-phone mr-1"></i> {u.phone || 'None'}</div>
-                       <div className="text-[9px] text-slate-400 font-black uppercase"><i className="fa-solid fa-location-dot mr-1"></i> {u.address ? 'Recorded' : 'None'}</div>
-                    </div>
-                  </div>
-                ))
-              }
+              {registeredUsers.map((u, i) => (
+                <div key={i} className="p-6 bg-white border border-slate-100 rounded-[2rem] shadow-sm">
+                  <div className="font-black text-slate-800 text-lg">{u.name}</div>
+                  <div className="text-sm text-orange-600 font-bold mb-2">{u.email}</div>
+                  <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest"><i className="fa-solid fa-phone mr-1"></i> {u.phone || '--'}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
