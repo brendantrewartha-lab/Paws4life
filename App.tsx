@@ -439,7 +439,7 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden font-sans">
       {/* Header */}
-      <header className="bg-orange-600 text-white pt-12 pb-4 px-4 flex items-center justify-between shadow-xl z-[100]">
+      <header className="bg-orange-600 text-white pt-6 pb-4 px-4 flex items-center justify-between shadow-xl z-[100]">
         <div className="flex items-center gap-2">
           <div className="bg-white w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"><i className="fa-solid fa-paw text-orange-600"></i></div>
           <h1 className="text-xl font-black italic tracking-tighter">paws4life<span className="text-orange-200">.ai</span></h1>
