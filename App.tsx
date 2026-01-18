@@ -231,36 +231,40 @@ const App: React.FC = () => {
   const [formDog, setFormDog] = useState<Partial<DogProfile>>({ healthRecords: [], reminders: [] });
   const [location, setLocation] = useState<UserLocation>();
   
-  // Modal state for adding records
   const [recordModal, setRecordModal] = useState<{ isOpen: boolean, type: 'Vaccination' | 'Visit', title: string, date: string, notes: string } | null>(null);
 
   const activeDog = profiles.find(p => p.id === activeId);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Reminders Logic
+  // --- Date Helpers ---
+  const parseLocalISO = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setHours(0, 0, 0, 0);
+    return date;
+  };
+
   const getAllReminders = () => {
     return profiles.flatMap(p => p.reminders.map(r => ({ ...r, dog: p.name })));
   };
 
   const getFilteredReminders = (daysRange?: number) => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
-    let endRange: Date | null = null;
-    if (daysRange !== undefined) {
-      endRange = new Date(now);
-      endRange.setDate(now.getDate() + daysRange);
-    }
-
     return getAllReminders()
       .filter(r => {
-        const rDate = new Date(r.date);
-        rDate.setHours(0, 0, 0, 0);
+        const rDate = parseLocalISO(r.date);
         
-        const isPast = rDate < now;
-        const isWithinRange = endRange ? rDate <= endRange : true;
-        
-        return !isPast && isWithinRange;
+        const isPast = rDate < today;
+        if (isPast) return false;
+
+        if (daysRange !== undefined) {
+          const endRange = new Date(today);
+          endRange.setDate(today.getDate() + daysRange);
+          return rDate <= endRange;
+        }
+        return true;
       })
       .sort((a, b) => a.date.localeCompare(b.date));
   };
@@ -349,8 +353,7 @@ const App: React.FC = () => {
     if (!recordModal || !recordModal.title) return;
     const rec: HealthRecord = { id: Date.now().toString(), type: recordModal.type, title: recordModal.title, date: recordModal.date, notes: recordModal.notes };
     
-    // Auto-suggest next reminder
-    const nextDate = new Date(recordModal.date);
+    const nextDate = new Date(parseLocalISO(recordModal.date));
     nextDate.setFullYear(nextDate.getFullYear() + 1);
     const rem: DogReminder = { id: Date.now().toString() + 'r', type: recordModal.type === 'Vaccination' ? 'Vaccination' : 'Vet', title: `Booster/Next: ${recordModal.title}`, date: nextDate.toISOString().split('T')[0] };
 
@@ -365,7 +368,7 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden">
       {/* Header */}
-      <header className="bg-orange-600 text-white pt-12 pb-4 px-4 flex items-center justify-between shadow-xl">
+      <header className="bg-orange-600 text-white pt-12 pb-4 px-4 flex items-center justify-between shadow-xl z-[100]">
         <div className="flex items-center gap-2">
           <div className="bg-white w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"><i className="fa-solid fa-paw text-orange-600"></i></div>
           <h1 className="text-xl font-black italic tracking-tighter">paws4life<span className="text-orange-200">.ai</span></h1>
@@ -374,7 +377,7 @@ const App: React.FC = () => {
           <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95">
             <i className="fa-solid fa-bell"></i>
             {upcomingRemindersCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-orange-600 animate-in">
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-orange-600 animate-bounce">
                 {upcomingRemindersCount}
               </span>
             )}
@@ -386,7 +389,14 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Chat Content */}
-      <main className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 scrollbar-hide">
+      <main className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 scrollbar-hide relative">
+        {messages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-20">
+            <div className="w-20 h-20 bg-orange-100 rounded-[2rem] flex items-center justify-center text-orange-600 mb-6 shadow-inner"><i className="fa-solid fa-shield-dog text-3xl"></i></div>
+            <h2 className="text-lg font-black uppercase tracking-[0.2em] leading-relaxed mb-2 text-slate-800">Safety First.</h2>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ask your canine health advisor anything...</p>
+          </div>
+        )}
         {messages.map(m => (
           <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in`}>
             <div className={`max-w-[85%] p-4 rounded-3xl text-sm shadow-sm ${m.role === 'user' ? 'bg-orange-600 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none border border-slate-100'}`}>
@@ -399,9 +409,9 @@ const App: React.FC = () => {
         <div ref={scrollRef} />
       </main>
 
-      <footer className="p-4 bg-white border-t pb-8 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.05)]">
+      <footer className="p-4 bg-white border-t pb-8 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.05)] z-[90]">
         <form onSubmit={sendMessage} className="flex gap-2">
-          <input value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Ask a vet question..."} className="flex-1 bg-slate-50 px-5 py-3.5 rounded-2xl text-sm border focus:border-orange-500 outline-none transition-all shadow-inner" />
+          <input value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Ask about ${activeDog.name}...` : "Type health question here..."} className="flex-1 bg-slate-50 px-5 py-4 rounded-2xl text-sm border-2 border-transparent focus:border-orange-500 outline-none transition-all shadow-inner font-bold" />
           <button disabled={!input.trim() || loading} className="bg-orange-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all"><i className="fa-solid fa-paper-plane"></i></button>
         </form>
       </footer>
@@ -568,23 +578,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {formDog.reminders && formDog.reminders.length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2 ml-1"><i className="fa-solid fa-bolt-lightning text-orange-500"></i> Critical Schedule</h3>
-                <div className="space-y-3">
-                  {formDog.reminders.map(r => (
-                    <div key={r.id} className="p-5 bg-orange-600 text-white rounded-[2rem] flex items-center justify-between shadow-xl shadow-orange-100 animate-pulse">
-                      <div>
-                        <div className="text-sm font-black italic">{r.title}</div>
-                        <div className="text-[10px] opacity-70 font-bold uppercase tracking-widest mt-0.5">{r.type} Alert</div>
-                      </div>
-                      <div className="text-[10px] font-black bg-white/20 px-3 py-1.5 rounded-xl backdrop-blur-sm border border-white/20">{r.date}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            
             <button onClick={() => { if(confirm("Permanently archive this companion data?")) { setProfiles(p => p.filter(d => d.id !== formDog.id)); setView('profiles'); } }} className="w-full text-red-400 font-black uppercase text-[10px] tracking-[0.3em] py-5 border border-red-50 rounded-[2rem] bg-red-50/20 active:bg-red-50 transition-all">Archive Profile</button>
           </div>
         </div>
@@ -614,7 +607,7 @@ const App: React.FC = () => {
 
             <button onClick={() => setView('admin')} className="w-full py-4 text-slate-300 font-black uppercase text-[10px] tracking-[0.3em] border border-dashed border-slate-200 rounded-2xl active:bg-slate-100 transition-colors">Admin Governance</button>
             <div className="text-center pb-8 pt-4">
-              <p className="text-[9px] text-slate-300 font-black italic tracking-[0.3em]">paws4life.ai v3.0.1 • Advanced Canine Intelligence</p>
+              <p className="text-[9px] text-slate-300 font-black italic tracking-[0.3em]">paws4life.ai v3.0.2 • Intelligence Restored</p>
             </div>
           </div>
         </div>
@@ -656,7 +649,7 @@ const App: React.FC = () => {
             <h2 className="text-xl font-black italic">Reminders</h2>
           </header>
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            {getFilteredReminders().length === 0 ? <div className="text-center py-20 text-slate-300 italic opacity-50"><i className="fa-solid fa-bell-slash text-4xl mb-4 block"></i> No pending notifications</div> : 
+            {getFilteredReminders().length === 0 ? <div className="text-center py-20 text-slate-300 italic opacity-50"><i className="fa-solid fa-bell-slash text-4xl mb-4 block"></i> No pending reminders</div> : 
               getFilteredReminders().map(r => (
                 <div key={r.id} className="p-5 bg-white border border-slate-100 rounded-[2rem] flex items-center gap-4 shadow-sm">
                   <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 shadow-inner"><i className="fa-solid fa-bell"></i></div>
