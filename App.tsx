@@ -95,13 +95,13 @@ const MapView: React.FC<{
   const [searchQuery, setSearchQuery] = useState('');
   const [places, setPlaces] = useState<MapPlace[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]); // Default empty
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]); 
 
   const categories = [
-    { id: 'Vet', label: 'Vets', icon: 'fa-stethoscope', color: 'orange' },
-    { id: 'Dog Park', label: 'Dog Parks', icon: 'fa-tree', color: 'green' },
-    { id: 'Dog Grooming', label: 'Grooming', icon: 'fa-scissors', color: 'blue' },
-    { id: 'Dog Hospital', label: 'Hospitals', icon: 'fa-hospital', color: 'red' }
+    { id: 'Vet', label: 'Vets', query: 'Veterinary Clinic', icon: 'fa-stethoscope', color: 'orange' },
+    { id: 'Dog Park', label: 'Dog Parks', query: 'Dog Park', icon: 'fa-tree', color: 'green' },
+    { id: 'Dog Grooming', label: 'Grooming', query: 'Dog Grooming', icon: 'fa-scissors', color: 'blue' },
+    { id: 'Dog Hospital', label: 'Hospitals', query: 'Veterinary Hospital', icon: 'fa-hospital', color: 'red' }
   ];
 
   // Initialize Map
@@ -124,7 +124,7 @@ const MapView: React.FC<{
         detectRetina: true
       }).addTo(mapInstance.current);
 
-      // User location marker (Blue dot)
+      // User location marker
       L.marker([location.latitude, location.longitude], { 
         icon: L.divIcon({ 
           html: '<div class="relative w-8 h-8 flex items-center justify-center"><div class="absolute inset-0 bg-blue-500 rounded-full opacity-30 animate-ping"></div><div class="relative w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div></div>', 
@@ -135,11 +135,9 @@ const MapView: React.FC<{
 
       setMapReady(true);
       
-      // Intensive grey-screen fix
       const refreshInterval = setInterval(() => {
         if (mapInstance.current) mapInstance.current.invalidateSize();
       }, 500);
-      
       setTimeout(() => clearInterval(refreshInterval), 3000);
     };
 
@@ -169,8 +167,6 @@ const MapView: React.FC<{
     markersRef.current = [];
 
     places.forEach(place => {
-      // Per instructions: "all icons are the same paw print vs the icons shown next to the topics of interest"
-      // So map markers are always PAW PRINTS.
       const marker = L.marker([place.lat, place.lng], {
         icon: L.divIcon({
           html: `<div class="w-10 h-10 bg-${place.categoryColor}-600 rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white transform hover:scale-110 transition-transform"><i class="fa-solid fa-paw"></i></div>`,
@@ -202,7 +198,7 @@ const MapView: React.FC<{
     }
   }, [places]);
 
-  const fetchPlaces = async (query: string) => {
+  const fetchPlaces = async (query: string, categoryIds: string[]) => {
     if (!location) return;
     if (!query || query.trim().length === 0) {
       setPlaces([]);
@@ -212,10 +208,10 @@ const MapView: React.FC<{
     setSearching(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // We explicitly ask for coordinates in the text to bypass the grounding URI extraction limits
+      // Optimized prompt to force categorization and coordinate extraction
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Find real local business services near me for: ${query}. For each result found, strictly provide its details in the text as: [Name: Name, Lat: Latitude, Lng: Longitude].`,
+        contents: `Find real local business services near me for: ${query}. For each result found, strictly provide its details in the text as: [Name: Name, CategoryID: OneOf(${categoryIds.join(',')}), Lat: Latitude, Lng: Longitude].`,
         config: {
           tools: [{ googleMaps: {} }],
           toolConfig: {
@@ -233,20 +229,17 @@ const MapView: React.FC<{
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const extractedPlaces: MapPlace[] = [];
 
-      // Pattern 1: Look for the [Name: ..., Lat: ..., Lng: ...] format in response text
-      const coordPattern = /\[Name:\s*([^,]+),\s*Lat:\s*(-?\d+\.\d+),\s*Lng:\s*(-?\d+\.\d+)\]/gi;
+      // Pattern: Look for the [Name: ..., CategoryID: ..., Lat: ..., Lng: ...] format
+      const coordPattern = /\[Name:\s*([^,]+),\s*CategoryID:\s*([^,]+),\s*Lat:\s*(-?\d+\.\d+),\s*Lng:\s*(-?\d+\.\d+)\]/gi;
       let match;
       while ((match = coordPattern.exec(responseText)) !== null) {
         const name = match[1].trim();
-        const lat = parseFloat(match[2]);
-        const lng = parseFloat(match[3]);
+        const catId = match[2].trim();
+        const lat = parseFloat(match[3]);
+        const lng = parseFloat(match[4]);
 
-        // Find matching chunk to get the URI
+        const matchedCat = categories.find(c => c.id === catId) || categories[0];
         const matchingChunk = chunks.find((c: any) => c.maps && c.maps.title?.toLowerCase().includes(name.toLowerCase()));
-        const matchedCat = categories.find(c => 
-          name.toLowerCase().includes(c.id.toLowerCase()) || 
-          query.toLowerCase().includes(c.id.toLowerCase())
-        ) || categories[0];
 
         extractedPlaces.push({
           id: `txt-${name}-${Date.now()}`,
@@ -259,50 +252,43 @@ const MapView: React.FC<{
         });
       }
 
-      // Pattern 2: Fallback to URI extraction if text parsing didn't find everything or found nothing
-      if (extractedPlaces.length < 3) {
-        chunks.forEach((chunk: any, idx: number) => {
-          if (chunk.maps) {
-            const uri = chunk.maps.uri || "";
-            const title = chunk.maps.title || "Pet Service";
-            
-            // Check if we already have this place from text parsing
-            if (extractedPlaces.some(p => p.name === title)) return;
+      // Fallback/Supplement from grounding chunks
+      chunks.forEach((chunk: any, idx: number) => {
+        if (chunk.maps) {
+          const uri = chunk.maps.uri || "";
+          const title = chunk.maps.title || "Pet Service";
+          
+          if (extractedPlaces.some(p => p.name === title)) return;
 
-            // Better regex for both @lat,lng and !3d!4d formats
-            const atMatch = uri.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-            const dMatch = uri.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-            
-            let lat = 0;
-            let lng = 0;
+          const atMatch = uri.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+          const dMatch = uri.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+          
+          let lat = 0;
+          let lng = 0;
+          if (atMatch) { lat = parseFloat(atMatch[1]); lng = parseFloat(atMatch[2]); }
+          else if (dMatch) { lat = parseFloat(dMatch[1]); lng = parseFloat(dMatch[2]); }
 
-            if (atMatch) {
-              lat = parseFloat(atMatch[1]);
-              lng = parseFloat(atMatch[2]);
-            } else if (dMatch) {
-              lat = parseFloat(dMatch[1]);
-              lng = parseFloat(dMatch[2]);
-            }
+          if (lat !== 0 && lng !== 0) {
+            // Smarter classification for supplement results
+            let matchedCat = categories[0];
+            const lowerTitle = title.toLowerCase();
+            if (lowerTitle.includes('groom') || lowerTitle.includes('spa') || query.toLowerCase().includes('grooming')) matchedCat = categories.find(c => c.id === 'Dog Grooming')!;
+            else if (lowerTitle.includes('park') || lowerTitle.includes('reserve')) matchedCat = categories.find(c => c.id === 'Dog Park')!;
+            else if (lowerTitle.includes('hospital')) matchedCat = categories.find(c => c.id === 'Dog Hospital')!;
+            else if (lowerTitle.includes('vet') || lowerTitle.includes('clinic')) matchedCat = categories.find(c => c.id === 'Vet')!;
 
-            if (lat !== 0 && lng !== 0) {
-              const matchedCat = categories.find(c => 
-                title.toLowerCase().includes(c.id.toLowerCase()) || 
-                query.toLowerCase().includes(c.id.toLowerCase())
-              ) || categories[0];
-
-              extractedPlaces.push({
-                id: `uri-${idx}-${Date.now()}`,
-                name: title,
-                lat,
-                lng,
-                type: matchedCat.label,
-                uri,
-                categoryColor: matchedCat.color
-              });
-            }
+            extractedPlaces.push({
+              id: `uri-${idx}-${Date.now()}`,
+              name: title,
+              lat,
+              lng,
+              type: matchedCat.label,
+              uri,
+              categoryColor: matchedCat.color
+            });
           }
-        });
-      }
+        }
+      });
 
       setPlaces(extractedPlaces);
     } catch (err) {
@@ -322,8 +308,9 @@ const MapView: React.FC<{
     if (newCats.length === 0) {
       setPlaces([]);
     } else {
-      const queryStr = newCats.map(c => categories.find(cat => cat.id === c)?.label).join(", ");
-      fetchPlaces(queryStr);
+      const activeQueries = newCats.map(c => categories.find(cat => cat.id === c)?.query);
+      const queryStr = activeQueries.join(", ");
+      fetchPlaces(queryStr, newCats);
     }
   };
 
@@ -354,10 +341,10 @@ const MapView: React.FC<{
             placeholder="Search nearby pet services..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => { if(e.key === 'Enter') fetchPlaces(searchQuery); }}
+            onKeyDown={(e) => { if(e.key === 'Enter') fetchPlaces(searchQuery, selectedCategories); }}
             className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm placeholder-white/60 focus:bg-white focus:text-slate-800 outline-none transition-all shadow-inner"
           />
-          <button onClick={() => fetchPlaces(searchQuery)} className="absolute right-3 top-2.5 text-white/50 hover:text-white">
+          <button onClick={() => fetchPlaces(searchQuery, selectedCategories)} className="absolute right-3 top-2.5 text-white/50 hover:text-white">
             {searching ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-magnifying-glass"></i>}
           </button>
         </div>
@@ -639,7 +626,7 @@ const App: React.FC = () => {
           <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
             <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} placeholder="Owner Name" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
             <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} placeholder="Email Address" className="w-full bg-white border px-5 py-4 rounded-2xl font-bold outline-none shadow-sm focus:border-orange-500" />
-            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.8.0 • Accurate Satellite GPS</p>
+            <p className="text-[9px] text-slate-300 uppercase font-black text-center mt-12 italic tracking-[0.2em]">paws4life v1.9.0 • Enhanced Multi-Map AI</p>
           </div>
         </div>
       )}
