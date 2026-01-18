@@ -463,7 +463,7 @@ const App: React.FC = () => {
       <main className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-60 scrollbar-hide relative">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center px-8 py-20 animate-in">
-            <div className="w-24 h-24 bg-white rounded-[2.5rem] flex items-center justify-center text-orange-600 mb-8 shadow-2xl border-4 border-orange-50"><i className="fa-solid fa-shield-dog text-4xl"></i></div>
+            <div className="w-24 h-24 bg-white rounded-[2.5rem] flex items-center justify-center text-orange-600 mb-8 shadow-2xl border-4 border-orange-60"><i className="fa-solid fa-shield-dog text-4xl"></i></div>
             <h2 className="text-3xl font-black tracking-tight text-slate-800 mb-3 leading-tight">Welcome, {user.name.split(' ')[0] || 'Pack Member'}</h2>
             <p className="text-sm text-slate-500 font-medium leading-relaxed mb-10">Your AI-powered health advisor and concierge for everything canine. Ask about toxins, vaccines, or find local emergency vets.</p>
             <div className="grid grid-cols-2 gap-4 w-full">
