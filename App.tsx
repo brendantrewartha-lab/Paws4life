@@ -196,7 +196,7 @@ const MapView: React.FC<{
 
   return (
     <div ref={containerRef} className="fixed inset-0 z-[150] bg-white flex flex-col animate-in">
-      <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3">
+      <header className="bg-orange-600 text-white px-4 pt-[env(safe-area-inset-top,1rem)] pb-3 flex items-center gap-3">
         <button onClick={onClose} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
         <div className="flex-1 relative">
           <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && fetchPlaces(searchQuery, selectedCategories)} className="w-full bg-white/10 rounded-xl px-4 py-2 text-sm placeholder-white/60 focus:bg-white focus:text-slate-800 outline-none" placeholder="Search pet spots..." />
@@ -223,10 +223,10 @@ const MapView: React.FC<{
 // --- App Component ---
 
 const App: React.FC = () => {
-  const [profiles, setProfiles] = useState<DogProfile[]>(() => JSON.parse(localStorage.getItem('paws_v6_profiles') || '[]'));
-  const [user, setUser] = useState<UserProfile>(() => JSON.parse(localStorage.getItem('paws_v6_user') || '{"name":"","email":"","phone":"","address":""}'));
-  const [activeId, setActiveId] = useState<string | null>(localStorage.getItem('paws_v6_active'));
-  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>(() => JSON.parse(localStorage.getItem('paws_v6_admin_users') || '[]'));
+  const [profiles, setProfiles] = useState<DogProfile[]>(() => JSON.parse(localStorage.getItem('paws_v7_profiles') || '[]'));
+  const [user, setUser] = useState<UserProfile>(() => JSON.parse(localStorage.getItem('paws_v7_user') || '{"name":"","email":"","phone":"","address":""}'));
+  const [activeId, setActiveId] = useState<string | null>(localStorage.getItem('paws_v7_active'));
+  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>(() => JSON.parse(localStorage.getItem('paws_v7_admin_users') || '[]'));
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -271,7 +271,6 @@ const App: React.FC = () => {
     return getAllReminders()
       .filter(r => {
         const rDate = parseLocalISO(r.date);
-        // Ensure strictly future (including today)
         const isPast = rDate < today;
         if (isPast) return false;
 
@@ -288,14 +287,14 @@ const App: React.FC = () => {
   const upcomingBadgeCount = getFilteredReminders(30).length;
 
   useEffect(() => {
-    localStorage.setItem('paws_v6_profiles', JSON.stringify(profiles));
-    localStorage.setItem('paws_v6_user', JSON.stringify(user));
-    if (activeId) localStorage.setItem('paws_v6_active', activeId);
+    localStorage.setItem('paws_v7_profiles', JSON.stringify(profiles));
+    localStorage.setItem('paws_v7_user', JSON.stringify(user));
+    if (activeId) localStorage.setItem('paws_v7_active', activeId);
     if (user.email && user.name) {
       if (!registeredUsers.some(u => u.email === user.email)) {
         const next = [...registeredUsers, user];
         setRegisteredUsers(next);
-        localStorage.setItem('paws_v6_admin_users', JSON.stringify(next));
+        localStorage.setItem('paws_v7_admin_users', JSON.stringify(next));
       }
     }
   }, [profiles, user, activeId]);
@@ -306,6 +305,10 @@ const App: React.FC = () => {
       navigator.geolocation.getCurrentPosition(p => setLocation({ latitude: p.coords.latitude, longitude: p.coords.longitude }));
     }
   }, []);
+
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
   const sendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -437,9 +440,9 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden font-sans">
-      {/* Header */}
-      <header className="bg-orange-600 text-white pt-12 pb-4 px-4 flex items-center justify-between shadow-xl z-[100]">
+    <div className="flex flex-col h-[100dvh] w-full max-w-xl mx-auto bg-slate-50 relative shadow-2xl overflow-hidden font-sans">
+      {/* Compact Header for Mobile */}
+      <header className="bg-orange-600 text-white px-4 pt-[env(safe-area-inset-top,1rem)] pb-3 flex items-center justify-between shadow-xl z-[100]">
         <div className="flex items-center gap-2">
           <div className="bg-white w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"><i className="fa-solid fa-paw text-orange-600"></i></div>
           <h1 className="text-xl font-black italic tracking-tighter">paws4life<span className="text-orange-200">.ai</span></h1>
@@ -448,7 +451,7 @@ const App: React.FC = () => {
           <button onClick={() => setView('reminders-list')} className="relative w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-95">
             <i className="fa-solid fa-bell"></i>
             {upcomingBadgeCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-orange-600 animate-in">
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-orange-600">
                 {upcomingBadgeCount}
               </span>
             )}
@@ -462,13 +465,13 @@ const App: React.FC = () => {
       {/* Main Chat Content */}
       <main className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 scrollbar-hide relative">
         {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center px-8 py-20 animate-in">
-            <div className="w-24 h-24 bg-white rounded-[2.5rem] flex items-center justify-center text-orange-600 mb-8 shadow-2xl border-4 border-orange-50"><i className="fa-solid fa-shield-dog text-4xl"></i></div>
-            <h2 className="text-3xl font-black tracking-tight text-slate-800 mb-3 leading-tight">Welcome, {user.name.split(' ')[0] || 'Pack Member'}</h2>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed mb-10">Your AI-powered health advisor and concierge for everything canine. Ask about toxins, vaccines, or find local emergency vets.</p>
-            <div className="grid grid-cols-2 gap-4 w-full">
-               <button onClick={() => setInput("What foods are toxic to dogs?")} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-orange-600 transition-all hover:shadow-md">Toxin Check</button>
-               <button onClick={() => setInput("Show me a care schedule for my dog")} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-orange-600 transition-all hover:shadow-md">Care Schedule</button>
+          <div className="h-full flex flex-col items-center justify-center text-center px-8 py-10 animate-in">
+            <div className="w-20 h-20 bg-white rounded-[2.5rem] flex items-center justify-center text-orange-600 mb-6 shadow-2xl border-4 border-orange-50"><i className="fa-solid fa-shield-dog text-3xl"></i></div>
+            <h2 className="text-2xl font-black tracking-tight text-slate-800 mb-2 leading-tight">Hello, {user.name.split(' ')[0] || 'Friend'}</h2>
+            <p className="text-sm text-slate-500 font-medium leading-relaxed mb-8">Expert canine advice and pet services mapping.</p>
+            <div className="grid grid-cols-2 gap-3 w-full">
+               <button onClick={() => setInput("Is avocado safe for dogs?")} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-orange-600 transition-all">Toxin Check</button>
+               <button onClick={() => setInput("Show care schedule")} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-orange-600 transition-all">Care Tips</button>
             </div>
           </div>
         )}
@@ -481,13 +484,14 @@ const App: React.FC = () => {
           </div>
         ))}
         {loading && <div className="p-3 bg-white border rounded-2xl w-16 flex gap-1 animate-pulse"><div className="w-1.5 h-1.5 bg-orange-400 rounded-full"></div><div className="w-1.5 h-1.5 bg-orange-400 rounded-full"></div><div className="w-1.5 h-1.5 bg-orange-400 rounded-full"></div></div>}
-        <div ref={scrollRef} />
+        <div ref={scrollRef} className="h-1" />
       </main>
 
-      <footer className="p-4 bg-white border-t pb-8 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.05)] z-[90]">
+      {/* Response Bar adjusted for iPhone safe area */}
+      <footer className="px-4 pt-3 pb-[env(safe-area-inset-bottom,1rem)] bg-white border-t shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.05)] z-[90]">
         <form onSubmit={sendMessage} className="flex gap-2">
-          <input value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Talk about ${activeDog.name}...` : "Ask your advisor..."} className="flex-1 bg-slate-50 px-5 py-4 rounded-2xl text-sm border-2 border-transparent focus:border-orange-500 outline-none transition-all shadow-inner font-bold" />
-          <button disabled={!input.trim() || loading} className="bg-orange-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all"><i className="fa-solid fa-paper-plane"></i></button>
+          <input value={input} onChange={e => setInput(e.target.value)} placeholder={activeDog ? `Chat about ${activeDog.name}...` : "Type health question..."} className="flex-1 bg-slate-50 px-4 py-3 rounded-2xl text-sm border-2 border-transparent focus:border-orange-500 outline-none transition-all shadow-inner font-bold" />
+          <button disabled={!input.trim() || loading} className="bg-orange-600 text-white w-11 h-11 rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all"><i className="fa-solid fa-paper-plane"></i></button>
         </form>
       </footer>
 
@@ -499,20 +503,20 @@ const App: React.FC = () => {
             <div className="w-20 h-20 bg-white rounded-[2rem] mx-auto flex items-center justify-center shadow-2xl"><i className="fa-solid fa-paw text-4xl text-orange-600"></i></div>
             <div>
               <h1 className="text-4xl font-black tracking-tighter mb-2">paws4life<span className="text-orange-200">.ai</span></h1>
-              <p className="opacity-80 font-bold text-sm uppercase tracking-widest">Your Canine Companion</p>
+              <p className="opacity-80 font-bold text-sm uppercase tracking-widest">Join the Pack</p>
             </div>
             <div className="space-y-3">
               <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} className="w-full bg-white text-slate-800 rounded-2xl px-5 py-4 font-bold placeholder-slate-400 outline-none shadow-xl border-2 border-transparent focus:border-white" placeholder="Name *" />
               <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} className="w-full bg-white text-slate-800 rounded-2xl px-5 py-4 font-bold placeholder-slate-400 outline-none shadow-xl border-2 border-transparent focus:border-white" placeholder="Email *" />
-              <button onClick={() => user.name && user.email && setView('chat')} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black shadow-2xl uppercase tracking-[0.2em] text-xs mt-4 active:scale-95 transition-all">Join the Pack</button>
+              <button onClick={() => user.name && user.email && setView('chat')} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black shadow-2xl uppercase tracking-[0.2em] text-xs mt-4 active:scale-95 transition-all">Get Started</button>
             </div>
           </div>
         </div>
       )}
 
       {view === 'profiles' && (
-        <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in">
-          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3">
+        <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in pt-[env(safe-area-inset-top,0px)]">
+          <header className="bg-orange-600 text-white p-4 flex items-center gap-3">
             <button onClick={() => setView('chat')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
             <h2 className="text-xl font-black italic">My Pack</h2>
           </header>
@@ -535,16 +539,16 @@ const App: React.FC = () => {
       )}
 
       {view === 'edit-form' && (
-        <div className="fixed inset-0 z-[210] bg-white flex flex-col animate-in">
-          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center justify-between">
+        <div className="fixed inset-0 z-[210] bg-white flex flex-col animate-in pt-[env(safe-area-inset-top,0px)]">
+          <header className="bg-orange-600 text-white p-4 flex items-center justify-between shadow-md">
             <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h2 className="text-xl font-black">Edit Identity</h2>
+            <h2 className="text-xl font-black">Edit Details</h2>
             <button type="submit" form="dogForm" className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"><i className="fa-solid fa-check"></i></button>
           </header>
-          <form id="dogForm" onSubmit={saveDog} className="flex-1 p-6 space-y-8 overflow-y-auto bg-slate-50">
+          <form id="dogForm" onSubmit={saveDog} className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50">
             <div className="flex flex-col items-center gap-4">
-              <div className="w-32 h-32 bg-white rounded-[3rem] border-4 border-white shadow-2xl overflow-hidden relative flex items-center justify-center">
-                {formDog.photo ? <img src={formDog.photo} className="w-full h-full object-cover" /> : <i className="fa-solid fa-dog text-5xl text-slate-100"></i>}
+              <div className="w-28 h-28 bg-white rounded-[3rem] border-4 border-white shadow-2xl overflow-hidden relative flex items-center justify-center">
+                {formDog.photo ? <img src={formDog.photo} className="w-full h-full object-cover" /> : <i className="fa-solid fa-dog text-4xl text-slate-100"></i>}
                 <label className="absolute inset-0 flex items-center justify-center bg-black/10 opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
                    <div className="bg-orange-600 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-2xl border-2 border-white"><i className="fa-solid fa-camera text-sm"></i></div>
                    <input type="file" className="hidden" accept="image/*" onChange={e => e.target.files?.[0] && scanBreed(e.target.files[0])} />
@@ -553,92 +557,40 @@ const App: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-              <input required value={formDog.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-white border border-slate-100 px-5 py-5 rounded-[1.5rem] font-bold shadow-sm outline-none focus:border-orange-500 transition-all" placeholder="Dog's Name *" />
+              <input required value={formDog.name || ''} onChange={e => setFormDog({ ...formDog, name: e.target.value })} className="w-full bg-white border border-slate-100 px-5 py-4 rounded-[1.5rem] font-bold shadow-sm outline-none focus:border-orange-500 transition-all" placeholder="Dog's Name *" />
               
               <div className="relative">
-                <input value={formDog.breed || ''} onChange={e => setFormDog({ ...formDog, breed: e.target.value })} className="w-full bg-white border border-slate-100 px-5 py-5 rounded-[1.5rem] font-bold shadow-sm outline-none focus:border-orange-500 transition-all pr-14" placeholder="Breed" />
-                <label className="absolute right-3 top-2 bottom-2 bg-orange-50 text-orange-600 w-10 flex items-center justify-center rounded-xl cursor-pointer hover:bg-orange-100 transition-all active:scale-90" title="Identify Breed with AI">
+                <input value={formDog.breed || ''} onChange={e => setFormDog({ ...formDog, breed: e.target.value })} className="w-full bg-white border border-slate-100 px-5 py-4 rounded-[1.5rem] font-bold shadow-sm outline-none focus:border-orange-500 transition-all pr-14" placeholder="Breed" />
+                <label className="absolute right-3 top-2 bottom-2 bg-orange-100 text-orange-600 w-10 flex items-center justify-center rounded-xl cursor-pointer hover:bg-orange-200 transition-all active:scale-90" title="AI Breed ID">
                   {loading ? <i className="fa-solid fa-spinner fa-spin text-xs"></i> : <i className="fa-solid fa-wand-magic-sparkles text-xs"></i>}
                   <input type="file" className="hidden" accept="image/*" onChange={e => e.target.files?.[0] && scanBreed(e.target.files[0])} disabled={loading} />
                 </label>
               </div>
 
               <div className="flex gap-4">
-                <input value={formDog.age || ''} onChange={e => setFormDog({ ...formDog, age: e.target.value })} className="flex-1 bg-white border border-slate-100 px-5 py-5 rounded-[1.5rem] font-bold shadow-sm outline-none focus:border-orange-500 transition-all" placeholder="Age" />
-                <input value={formDog.weight || ''} onChange={e => setFormDog({ ...formDog, weight: e.target.value })} className="flex-1 bg-white border border-slate-100 px-5 py-5 rounded-[1.5rem] font-bold shadow-sm outline-none focus:border-orange-500 transition-all" placeholder="Weight (kg)" />
+                <input value={formDog.age || ''} onChange={e => setFormDog({ ...formDog, age: e.target.value })} className="flex-1 bg-white border border-slate-100 px-5 py-4 rounded-[1.5rem] font-bold shadow-sm outline-none" placeholder="Age" />
+                <input value={formDog.weight || ''} onChange={e => setFormDog({ ...formDog, weight: e.target.value })} className="flex-1 bg-white border border-slate-100 px-5 py-4 rounded-[1.5rem] font-bold shadow-sm outline-none" placeholder="Weight (kg)" />
               </div>
             </div>
 
-            <div className="space-y-6">
-               <h3 className="font-black uppercase tracking-[0.2em] text-[10px] text-slate-400 ml-1">Archive Management</h3>
-               <div className="space-y-3">
-                  {formDog.healthRecords?.map(r => (
-                    <div key={r.id} className="p-4 bg-white border border-slate-100 rounded-[1.5rem] flex items-center justify-between shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-1.5 h-6 rounded-full ${r.type === 'Vaccination' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
-                        <div><div className="text-xs font-black text-slate-800">{r.title}</div><div className="text-[9px] text-slate-400 font-bold">{r.date}</div></div>
-                      </div>
-                      <button type="button" onClick={() => deleteRecord(r.id)} className="text-red-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can text-sm"></i></button>
-                    </div>
-                  ))}
-                  {formDog.reminders?.map(r => (
-                    <div key={r.id} className="p-4 bg-white border border-slate-100 rounded-[1.5rem] flex items-center justify-between shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-1.5 h-6 rounded-full ${r.isBooked ? 'bg-green-500' : 'bg-slate-300'}`}></div>
-                        <div><div className="text-xs font-black text-slate-800">{r.title}</div><div className="text-[9px] text-slate-400 font-bold">{r.date}</div></div>
-                      </div>
-                      <button type="button" onClick={() => deleteReminder(r.id)} className="text-red-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can text-sm"></i></button>
-                    </div>
-                  ))}
-               </div>
-            </div>
-
             <div className="space-y-3">
-               <button type="button" onClick={() => setRecordModal({ isOpen: true, mode: 'past', type: 'Vaccination', title: '', date: new Date().toISOString().split('T')[0], notes: '', scheduleFollowUp: true, followUpRange: '1y' })} className="w-full bg-slate-900 text-white py-5 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2"><i className="fa-solid fa-clock-rotate-left"></i> Log Past Service</button>
-               <button type="button" onClick={() => setRecordModal({ isOpen: true, mode: 'future', type: 'Visit', title: '', date: new Date().toISOString().split('T')[0], notes: '', scheduleFollowUp: false })} className="w-full bg-blue-600 text-white py-5 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2"><i className="fa-solid fa-calendar-check"></i> Book Future Visit</button>
-               <button type="button" onClick={() => setRecordModal({ isOpen: true, mode: 'reminder', type: 'Other', title: '', date: new Date().toISOString().split('T')[0], notes: '', scheduleFollowUp: false })} className="w-full bg-slate-100 text-slate-600 py-5 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2"><i className="fa-solid fa-bell"></i> Set General Reminder</button>
+               <button type="button" onClick={() => setRecordModal({ isOpen: true, mode: 'past', type: 'Vaccination', title: '', date: new Date().toISOString().split('T')[0], notes: '', scheduleFollowUp: true, followUpRange: '1y' })} className="w-full bg-slate-900 text-white py-4 rounded-[1.2rem] font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2"><i className="fa-solid fa-clock-rotate-left"></i> Log Past Service</button>
+               <button type="button" onClick={() => setRecordModal({ isOpen: true, mode: 'future', type: 'Visit', title: '', date: new Date().toISOString().split('T')[0], notes: '', scheduleFollowUp: false })} className="w-full bg-blue-600 text-white py-4 rounded-[1.2rem] font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2"><i className="fa-solid fa-calendar-check"></i> Book Future Visit</button>
+               <button type="button" onClick={() => setRecordModal({ isOpen: true, mode: 'reminder', type: 'Other', title: '', date: new Date().toISOString().split('T')[0], notes: '', scheduleFollowUp: false })} className="w-full bg-slate-100 text-slate-600 py-4 rounded-[1.2rem] font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2"><i className="fa-solid fa-bell"></i> Set Reminder</button>
             </div>
-            
-            <button type="submit" className="w-full border-4 border-orange-50 bg-white text-orange-600 py-6 rounded-[2.5rem] font-black uppercase tracking-[0.2em] shadow-sm transition-all active:scale-95">Complete Setup</button>
           </form>
 
           {recordModal && (
             <div className="fixed inset-0 z-[300] bg-slate-900/60 flex items-end justify-center animate-in p-0">
-              <div className="bg-white w-full max-w-xl rounded-t-[3rem] p-8 pb-12 space-y-6 shadow-2xl">
+              <div className="bg-white w-full max-w-xl rounded-t-[3rem] p-8 pb-[env(safe-area-inset-bottom,2rem)] space-y-6 shadow-2xl">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-xl font-black italic">{recordModal.mode === 'past' ? 'Log Past Record' : recordModal.mode === 'future' ? 'Book Appointment' : 'Add Reminder'}</h3>
+                  <h3 className="text-xl font-black italic">{recordModal.mode === 'past' ? 'Past Record' : recordModal.mode === 'future' ? 'New Booking' : 'New Reminder'}</h3>
                   <button onClick={() => setRecordModal(null)} className="text-slate-300 hover:text-slate-800"><i className="fa-solid fa-xmark text-xl"></i></button>
                 </div>
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => setRecordModal({...recordModal, type: 'Vaccination'})} className={`py-3 rounded-xl font-black uppercase text-[9px] border-2 tracking-widest transition-all ${recordModal.type === 'Vaccination' ? 'bg-orange-500 text-white border-orange-500' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>Vaccination</button>
-                    <button onClick={() => setRecordModal({...recordModal, type: 'Visit'})} className={`py-3 rounded-xl font-black uppercase text-[9px] border-2 tracking-widest transition-all ${recordModal.type === 'Visit' ? 'bg-blue-500 text-white border-blue-500' : 'bg-slate-50 text-slate-400 border-slate-50'}`}>Vet Visit</button>
-                  </div>
-                  <input autoFocus value={recordModal.title} onChange={e => setRecordModal({...recordModal, title: e.target.value})} placeholder="Service Title (e.g. Parvo Booster)" className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white focus:border-orange-500 transition-all" />
-                  <input type="date" value={recordModal.date} onChange={e => setRecordModal({...recordModal, date: e.target.value})} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white focus:border-orange-500 transition-all" />
-                  
-                  {recordModal.mode === 'past' && (
-                    <div className="bg-slate-50 p-5 rounded-2xl space-y-4">
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${recordModal.scheduleFollowUp ? 'bg-orange-600 border-orange-600' : 'bg-white border-slate-200 group-hover:border-orange-300'}`}>
-                          {recordModal.scheduleFollowUp && <i className="fa-solid fa-check text-white text-[10px]"></i>}
-                        </div>
-                        <input type="checkbox" className="hidden" checked={recordModal.scheduleFollowUp} onChange={e => setRecordModal({...recordModal, scheduleFollowUp: e.target.checked})} />
-                        <span className="text-xs font-black uppercase tracking-widest text-slate-700">Schedule automatic follow-up?</span>
-                      </label>
-                      {recordModal.scheduleFollowUp && (
-                        <div className="grid grid-cols-4 gap-2">
-                           {['1m', '3m', '6m', '1y'].map(range => (
-                             <button key={range} onClick={() => setRecordModal({...recordModal, followUpRange: range})} className={`py-2 rounded-lg text-[9px] font-black uppercase transition-all ${recordModal.followUpRange === range ? 'bg-orange-600 text-white' : 'bg-white text-slate-400 border'}`}>
-                               {range}
-                             </button>
-                           ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <button onClick={handleAddRecord} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl text-xs">Save Event</button>
+                  <input autoFocus value={recordModal.title} onChange={e => setRecordModal({...recordModal, title: e.target.value})} placeholder="Title..." className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none" />
+                  <input type="date" value={recordModal.date} onChange={e => setRecordModal({...recordModal, date: e.target.value})} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none" />
+                  <button onClick={handleAddRecord} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl text-xs">Save Event</button>
                 </div>
               </div>
             </div>
@@ -647,130 +599,106 @@ const App: React.FC = () => {
       )}
 
       {view === 'profile-detail' && formDog && (
-        <div className="fixed inset-0 z-[220] bg-white flex flex-col animate-in">
-          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center justify-between shadow-md">
+        <div className="fixed inset-0 z-[220] bg-white flex flex-col animate-in pt-[env(safe-area-inset-top,0px)]">
+          <header className="bg-orange-600 text-white p-4 flex items-center justify-between shadow-md">
             <button onClick={() => setView('profiles')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h2 className="text-xl font-black italic">Companion Insights</h2>
+            <h2 className="text-xl font-black italic">Insights</h2>
             <button onClick={() => setView('edit-form')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"><i className="fa-solid fa-pen-to-square"></i></button>
           </header>
-          <div className="flex-1 p-6 space-y-8 overflow-y-auto bg-slate-50 scrollbar-hide">
+          <div className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50 scrollbar-hide pb-[env(safe-area-inset-bottom,2rem)]">
             <div className="flex items-center gap-6">
-              <div className="w-28 h-28 bg-white rounded-[2.5rem] overflow-hidden border-4 border-white shadow-2xl flex items-center justify-center">
+              <div className="w-24 h-24 bg-white rounded-[2rem] overflow-hidden border-4 border-white shadow-2xl flex items-center justify-center">
                 {formDog.photo ? <img src={formDog.photo} className="w-full h-full object-cover" /> : <i className="fa-solid fa-dog text-4xl text-slate-100"></i>}
               </div>
               <div className="flex-1">
-                <h3 className="text-3xl font-black text-slate-800 leading-none mb-2">{formDog.name}</h3>
-                <p className="text-sm text-orange-600 font-bold uppercase tracking-widest">{formDog.breed || 'Unique Friend'}</p>
-                <button onClick={() => { setActiveId(formDog.id!); setView('chat'); }} className={`mt-4 px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm transition-all active:scale-95 ${activeId === formDog.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border'}`}>
-                  {activeId === formDog.id ? 'Active Advisor' : 'Select Companion'}
+                <h3 className="text-2xl font-black text-slate-800 leading-none mb-1">{formDog.name}</h3>
+                <p className="text-xs text-orange-600 font-bold uppercase tracking-widest mb-3">{formDog.breed || 'Unique Friend'}</p>
+                <button onClick={() => { setActiveId(formDog.id!); setView('chat'); }} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm transition-all active:scale-95 ${activeId === formDog.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border'}`}>
+                  {activeId === formDog.id ? 'Active' : 'Select'}
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                 <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Current Age</div>
-                 <div className="font-black text-slate-800 text-xl">{formDog.age || '--'}</div>
-              </div>
-              <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                 <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Body Mass</div>
-                 <div className="font-black text-slate-800 text-xl">{formDog.weight || '--'}<span className="text-sm ml-1 opacity-40 uppercase">kg</span></div>
+            {/* Past Records */}
+            <div className="space-y-4">
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Archive History</h3>
+              <div className="space-y-2">
+                {formDog.healthRecords?.sort((a,b) => b.date.localeCompare(a.date)).map(r => (
+                  <div key={r.id} className="p-4 bg-white border border-slate-100 rounded-[1.5rem] flex items-center gap-4 shadow-sm">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white ${r.type === 'Vaccination' ? 'bg-orange-500' : 'bg-blue-500'} shadow-lg`}><i className={`fa-solid ${r.type === 'Vaccination' ? 'fa-syringe' : 'fa-calendar-check'} text-xs`}></i></div>
+                    <div className="flex-1">
+                      <div className="text-sm font-black text-slate-800 leading-none mb-1">{r.title}</div>
+                      <div className="text-[9px] text-slate-400 font-bold uppercase">{r.date}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* History Section: Past Records */}
+            {/* Booked Appointments */}
             <div className="space-y-4">
-              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Archive History</h3>
-              <div className="space-y-3">
-                {formDog.healthRecords?.length === 0 ? <p className="text-xs text-slate-300 italic py-4">No records logged yet.</p> : 
-                  formDog.healthRecords?.sort((a,b) => b.date.localeCompare(a.date)).map(r => (
-                    <div key={r.id} className="p-4 bg-white border border-slate-100 rounded-[2rem] flex items-center gap-4 shadow-sm">
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white ${r.type === 'Vaccination' ? 'bg-orange-500 shadow-orange-100' : 'bg-blue-500 shadow-blue-100'} shadow-lg`}><i className={`fa-solid ${r.type === 'Vaccination' ? 'fa-syringe' : 'fa-calendar-check'} text-sm`}></i></div>
-                      <div className="flex-1">
-                        <div className="text-sm font-black text-slate-800">{r.title}</div>
-                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{r.date} • {r.type}</div>
-                      </div>
-                    </div>
-                  ))
-                }
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Booked Appointments</h3>
+              <div className="space-y-2">
+                {formDog.reminders?.filter(r => parseLocalISO(r.date) >= getTodayAtMidnight() && r.isBooked).sort((a,b) => a.date.localeCompare(b.date)).map(r => (
+                  <div key={r.id} className="p-4 bg-blue-600 text-white rounded-[1.5rem] flex items-center gap-4 shadow-xl">
+                    <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center"><i className="fa-solid fa-calendar-check text-xs"></i></div>
+                    <div className="flex-1"><div className="text-sm font-black leading-none mb-1">{r.title}</div><div className="text-[9px] opacity-70 font-bold uppercase">{r.date}</div></div>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Booked Appointments: Future isBooked=true */}
+            {/* Suggested Reminders */}
             <div className="space-y-4">
-              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Booked Appointments</h3>
-              <div className="space-y-3">
-                {formDog.reminders?.filter(r => parseLocalISO(r.date) >= getTodayAtMidnight() && r.isBooked).length === 0 ? <p className="text-xs text-slate-300 italic py-4">No future bookings.</p> : 
-                  formDog.reminders?.filter(r => parseLocalISO(r.date) >= getTodayAtMidnight() && r.isBooked).sort((a,b) => a.date.localeCompare(b.date)).map(r => (
-                    <div key={r.id} className="p-4 bg-blue-600 text-white rounded-[2rem] flex items-center gap-4 shadow-xl shadow-blue-100">
-                      <div className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center"><i className="fa-solid fa-calendar-check text-sm"></i></div>
-                      <div className="flex-1">
-                        <div className="text-sm font-black">{r.title}</div>
-                        <div className="text-[9px] opacity-70 font-bold uppercase tracking-widest">{r.date}</div>
-                      </div>
-                    </div>
-                  ))
-                }
-              </div>
-            </div>
-
-            {/* Health Reminders: Future isBooked=false */}
-            <div className="space-y-4">
-              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Suggested Reminders</h3>
-              <div className="space-y-3">
-                {formDog.reminders?.filter(r => parseLocalISO(r.date) >= getTodayAtMidnight() && !r.isBooked).length === 0 ? <p className="text-xs text-slate-300 italic py-4">No suggestions pending.</p> : 
-                  formDog.reminders?.filter(r => parseLocalISO(r.date) >= getTodayAtMidnight() && !r.isBooked).sort((a,b) => a.date.localeCompare(b.date)).map(r => (
-                    <div key={r.id} className="p-4 bg-white border-2 border-orange-50 rounded-[2rem] flex items-center gap-4 shadow-sm">
-                      <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600"><i className="fa-solid fa-bolt text-sm"></i></div>
-                      <div className="flex-1">
-                        <div className="text-sm font-black text-slate-800">{r.title}</div>
-                        <div className="text-[9px] text-orange-500 font-bold uppercase tracking-widest">{r.date}</div>
-                      </div>
-                    </div>
-                  ))
-                }
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Suggestions</h3>
+              <div className="space-y-2">
+                {formDog.reminders?.filter(r => parseLocalISO(r.date) >= getTodayAtMidnight() && !r.isBooked).sort((a,b) => a.date.localeCompare(b.date)).map(r => (
+                  <div key={r.id} className="p-4 bg-white border border-orange-100 rounded-[1.5rem] flex items-center gap-4 shadow-sm">
+                    <div className="w-9 h-9 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600"><i className="fa-solid fa-bolt text-xs"></i></div>
+                    <div className="flex-1"><div className="text-sm font-black text-slate-800 leading-none mb-1">{r.title}</div><div className="text-[9px] text-orange-500 font-bold uppercase">{r.date}</div></div>
+                  </div>
+                ))}
               </div>
             </div>
             
-            <button onClick={() => { if(confirm("Archiving companion will hide it from active pack. Continue?")) { setProfiles(p => p.filter(d => d.id !== formDog.id)); setView('profiles'); } }} className="w-full text-red-400 font-black uppercase text-[10px] tracking-[0.3em] py-6 border border-red-50 rounded-[2.5rem] bg-red-50/20 active:bg-red-50 transition-all">Archive Companion</button>
+            <button onClick={() => { if(confirm("Archive profile?")) { setProfiles(p => p.filter(d => d.id !== formDog.id)); setView('profiles'); } }} className="w-full text-red-400 font-black uppercase text-[10px] tracking-[0.3em] py-5 border border-red-50 rounded-[2rem] bg-red-50/20 active:bg-red-50 transition-all">Archive</button>
           </div>
         </div>
       )}
 
       {view === 'settings' && (
-        <div className="fixed inset-0 z-[230] bg-white flex flex-col animate-in">
-          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3">
+        <div className="fixed inset-0 z-[230] bg-white flex flex-col animate-in pt-[env(safe-area-inset-top,0px)]">
+          <header className="bg-orange-600 text-white p-4 flex items-center gap-3">
             <button onClick={() => setView('chat')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h2 className="text-xl font-black italic">Settings & Profile</h2>
+            <h2 className="text-xl font-black italic">Settings</h2>
           </header>
           <div className="flex-1 p-6 space-y-6 overflow-y-auto bg-slate-50">
-            <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 space-y-5">
-              <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white" placeholder="Name *" />
-              <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white" placeholder="Email *" />
-              <input value={user.phone} onChange={e => setUser({ ...user, phone: e.target.value })} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white" placeholder="Phone" />
-              <input value={user.address} onChange={e => setUser({ ...user, address: e.target.value })} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none focus:bg-white" placeholder="Location" />
+            <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 space-y-4">
+              <input value={user.name} onChange={e => setUser({ ...user, name: e.target.value })} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none" placeholder="Name" />
+              <input value={user.email} onChange={e => setUser({ ...user, email: e.target.value })} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none" placeholder="Email" />
+              <input value={user.phone} onChange={e => setUser({ ...user, phone: e.target.value })} className="w-full bg-slate-50 border p-4 rounded-2xl font-bold outline-none" placeholder="Phone" />
             </div>
-            <button onClick={() => setView('admin')} className="w-full py-4 text-slate-300 font-black uppercase text-[10px] tracking-widest border border-dashed border-slate-200 rounded-2xl">Admin Panel</button>
+            <button onClick={() => setView('admin')} className="w-full py-4 text-slate-300 font-black uppercase text-[10px] tracking-widest border border-dashed border-slate-200 rounded-2xl">Admin</button>
           </div>
         </div>
       )}
 
       {view === 'reminders-list' && (
-        <div className="fixed inset-0 z-[240] bg-white flex flex-col animate-in">
-          <header className="bg-orange-600 text-white p-4 pt-12 flex items-center gap-3">
+        <div className="fixed inset-0 z-[240] bg-white flex flex-col animate-in pt-[env(safe-area-inset-top,0px)]">
+          <header className="bg-orange-600 text-white p-4 flex items-center gap-3">
             <button onClick={() => setView('chat')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"><i className="fa-solid fa-chevron-left"></i></button>
-            <h2 className="text-xl font-black italic">Upcoming (30 Days)</h2>
+            <h2 className="text-xl font-black italic">Upcoming (30d)</h2>
           </header>
-          <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
-            {getFilteredReminders(30).length === 0 ? <div className="text-center py-20 text-slate-300 italic opacity-50"><i className="fa-solid fa-calendar-day text-5xl mb-6 block"></i> All clear! No future tasks.</div> : 
+          <div className="flex-1 p-6 space-y-3 overflow-y-auto bg-slate-50">
+            {getFilteredReminders(30).length === 0 ? <div className="text-center py-20 text-slate-300 italic">No tasks for this month.</div> : 
               getFilteredReminders(30).map(r => (
                 <div key={r.id} className={`p-5 rounded-[2rem] flex items-center gap-4 shadow-sm border transition-all ${r.isBooked ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-800 border-slate-100'}`}>
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner ${r.isBooked ? 'bg-white/20' : 'bg-orange-100 text-orange-600'}`}><i className={`fa-solid ${r.isBooked ? 'fa-calendar-check' : 'fa-bell'}`}></i></div>
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${r.isBooked ? 'bg-white/20' : 'bg-orange-100 text-orange-600'}`}><i className={`fa-solid ${r.isBooked ? 'fa-calendar-check' : 'fa-bell'}`}></i></div>
                   <div className="flex-1">
-                    <div className="text-sm font-black italic mb-1">{r.title}</div>
-                    <div className={`text-[10px] font-bold uppercase tracking-widest ${r.isBooked ? 'opacity-70' : 'text-slate-400'}`}>{r.dog} • {r.isBooked ? 'Booked Appt' : 'Reminder'}</div>
+                    <div className="text-sm font-black italic">{r.title}</div>
+                    <div className={`text-[9px] font-bold uppercase tracking-widest ${r.isBooked ? 'opacity-70' : 'text-slate-400'}`}>{r.dog}</div>
                   </div>
-                  <div className={`text-[10px] font-black px-3 py-1.5 rounded-xl border transition-all ${r.isBooked ? 'bg-white/20 border-white/20' : 'bg-orange-50 border-orange-100 text-orange-600'}`}>{r.date}</div>
+                  <div className={`text-[9px] font-black px-2 py-1 rounded-lg ${r.isBooked ? 'bg-white/20' : 'bg-orange-50 text-orange-600'}`}>{r.date}</div>
                 </div>
               ))
             }
